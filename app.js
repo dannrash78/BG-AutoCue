@@ -1,25 +1,379 @@
-const $=id=>document.getElementById(id);let stream=null,recorder=null,chunks=[],recognition=null,running=false,voice=false,recording=false;let words=[],pos=0,manual=0,faceDetector=null,faceReady=false;
-const example=`Диагностициран съм с множествена склероза през 2006 година, но първите ми симптоми започнаха още през 2001-ва. Така че реално съм с болестта вече повече от 20 години.
+(() => {
+  "use strict";
 
-Да, приемам терапия, която е по Здравната каса.
+  const $ = id => document.getElementById(id);
+  const scriptEl = $("script");
+  const cueText = $("cueText");
+  const cueViewport = $("cueViewport");
+  const preview = $("preview");
+  const cameraBtn = $("cameraBtn");
+  const recordBtn = $("recordBtn");
+  const stopRecordBtn = $("stopRecordBtn");
+  const cameraStatus = $("cameraStatus");
+  const recordStatus = $("recordStatus");
+  const diagnostics = $("diagnostics");
+  const speechStatus = $("speechStatus");
+  const transcriptEl = $("transcript");
+  const speechTestBtn = $("speechTestBtn");
+  const followBtn = $("followBtn");
+  const speechStopBtn = $("speechStopBtn");
+  const upBtn = $("upBtn");
+  const downBtn = $("downBtn");
+  const resetBtn = $("resetBtn");
+  const autoBtn = $("autoBtn");
+  const fontSize = $("fontSize");
+  const speed = $("speed");
+  const fullscreenBtn = $("fullscreenBtn");
+  const sampleBtn = $("sampleBtn");
 
-Да. През последните две години имам интензивна кинезитерапия със специалист всяка седмица.
+  let cameraStream = null;
+  let recorder = null;
+  let recordedChunks = [];
+  let speech = null;
+  let speechMode = "off"; // off | test | follow
+  let autoTimer = null;
+  let offset = 0;
+  let lastSpeechRestart = 0;
+  let lastMatchedWord = 0;
 
-Определено виждам подобрение. Балансът ми е по-добър, походката ми е по-стабилна, а имам и подобрение в силата.
+  const sampleText = `Здравейте. Благодаря за поканата.
+Днес ще говорим за важна тема и ще споделя своя опит.
+За мен е важно информацията да бъде ясна, разбираема и полезна.
+Нека започнем.`;
 
-По болнична епикриза имам пареза на крака. При последния профилактичен преглед обаче неврологът я определи като субективна.
+  function log(msg) {
+    const time = new Date().toLocaleTimeString("bg-BG");
+    diagnostics.textContent = `[${time}] ${msg}`;
+  }
 
-Не. Всъщност при мен се е случвало и обратното — имал съм лекари, които са отричали необходимостта от рехабилитация и са ми казвали, че трябва повече да лежа и да почивам.`;
-function norm(s){return s.toLowerCase().replace(/[„“"«».,!?;:()[\]{}—–-]/g,' ').replace(/\s+/g,' ').trim()}
-function rebuild(){words=norm($('script').value).split(' ').filter(Boolean);$('count').textContent=words.length+' думи';pos=0;manual=0;$('cueText').textContent=$('script').value||'Постави сценария';render()}
-function render(){let fs=+$('font').value;$('cueText').style.fontSize=fs+'px';$('cueText').style.opacity=(+$('opacity').value/100);let step=fs*1.18*2.0;$('cueText').style.transform=`translateY(-${Math.max(0,pos+manual)*step/2}px)`}
-function speechState(t,ok){$('speechState').textContent=t;$('speechState').style.color=ok?'#86efac':'#fbbf24'}
-$('script').oninput=rebuild;$('example').onclick=()=>{$('script').value=example;rebuild()};$('clear').onclick=()=>{$('script').value='';rebuild()};$('font').oninput=()=>{$('fontO').textContent=$('font').value+'px';render()};$('opacity').oninput=()=>{$('opacityO').textContent=$('opacity').value+'%';render()};$('theme').onclick=()=>document.body.classList.toggle('light');
-async function cameraStart(){try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:1920},height:{ideal:1080}},audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});$('video').srcObject=stream;$('record').disabled=false;$('start').disabled=false;$('camera').textContent='✅ Камерата е готова';startFace()}catch(e){alert('Не може да се получи достъп до камерата/микрофона: '+e.message)}}$('camera').onclick=cameraStart;
-function initSpeech(){const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){speechState('браузърът не предоставя Speech Recognition',false);$('voice').disabled=true;return}recognition=new SR();recognition.lang='bg-BG';recognition.continuous=true;recognition.interimResults=true;recognition.maxAlternatives=5;recognition.onstart=()=>speechState('активно • bg-BG',true);recognition.onresult=e=>{let interim='';for(let i=e.resultIndex;i<e.results.length;i++){let t=e.results[i][0].transcript;if(e.results[i].isFinal)lastFinal+=' '+t;else interim+=' '+t}let h=norm(lastFinal+' '+interim);$('heard').textContent=h||'—';if(running)matchScript(h)};recognition.onerror=e=>{speechState('грешка: '+e.error,false);if(e.error==='not-allowed'||e.error==='service-not-allowed'){voice=false;$('voice').textContent='🎙️ БГ ГЛАС: НЯМА ДОСТЪП'}};recognition.onend=()=>{if(running&&voice)setTimeout(()=>{try{recognition.start()}catch(e){}},250)}}let lastFinal='';
-function matchScript(heard){if(!words.length)return;let h=heard.split(' ').filter(Boolean),cur=Math.max(0,pos-3),end=Math.min(words.length,pos+55),best=0,bestI=-1;for(let i=cur;i<end;i++)for(let n=2;n<=6;n++){let score=0;for(let j=0;j<n;j++)if(i+j<words.length&&h.length-n+j>=0&&h[h.length-n+j]===words[i+j])score++;if(score>=2&&score>best){best=score;bestI=i+n}}if(bestI>=pos){pos=Math.min(words.length-1,bestI+1);manual=0;render()}}
-$('voice').onclick=()=>{if(!recognition){initSpeech();if(!recognition)return}voice=!voice;$('voice').textContent='🎙️ БГ ГЛАС: '+(voice?'ВКЛ.':'ИЗКЛ.');lastFinal='';if(voice)try{recognition.start()}catch(e){}else try{recognition.stop()}catch(e){}};
-$('start').onclick=()=>{if(!words.length)return alert('Постави сценарий.');running=true;$('start').disabled=true;$('pause').disabled=false;if(voice)try{recognition.start()}catch(e){}};$('pause').onclick=()=>{running=false;$('start').disabled=false;$('pause').disabled=true};$('reset').onclick=()=>{pos=0;manual=0;running=false;$('start').disabled=!stream;$('pause').disabled=true;render()};$('up').onclick=()=>{manual-=3;render()};$('down').onclick=()=>{manual+=3;render()};
-async function startFace(){if(!window.FaceDetection){$('faceStatus').textContent='Лице: API не зареден';return}try{faceDetector=new FaceDetection({locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${f}`});faceDetector.setOptions({model:'short',minDetectionConfidence:.55});faceDetector.onResults(r=>{let c=$('faceCanvas'),v=$('video'),ctx=c.getContext('2d');c.width=v.videoWidth||640;c.height=v.videoHeight||480;ctx.clearRect(0,0,c.width,c.height);let fs=r.detections||[];$('faceStatus').textContent='Лице: '+(fs.length?fs.length+' открито':'не е открито');ctx.strokeStyle='#22c55e';ctx.lineWidth=Math.max(3,c.width/220);fs.forEach(d=>{let b=d.boundingBox;ctx.strokeRect(b.xCenter*c.width-b.width*c.width/2,b.yCenter*c.height-b.height*c.height/2,b.width*c.width,b.height*c.height)})});faceReady=true;faceLoop()}catch(e){$('faceStatus').textContent='Лице: грешка'}}
-async function faceLoop(){if(faceReady&&stream&&$('video').readyState>=2)try{await faceDetector.send({image:$('video')})}catch(e){}requestAnimationFrame(faceLoop)}
-$('record').onclick=()=>{if(!stream)return;if(!recorder||recorder.state==='inactive'){chunks=[];let mime=MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')?'video/webm;codecs=vp9,opus':'video/webm';recorder=new MediaRecorder(stream,{mimeType:mime});recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};recorder.onstop=()=>{let url=URL.createObjectURL(new Blob(chunks,{type:recorder.mimeType}));$('download').href=url;$('download').download='bg-autocue-video.webm';$('download').classList.remove('hidden')};recorder.start();$('cameraWrap').classList.add('recording');$('record').textContent='⏹ Спри'}else{recorder.stop();$('cameraWrap').classList.remove('recording');$('record').textContent='⏺ Запис'}};initSpeech();rebuild();
+  function normalize(s) {
+    return (s || "")
+      .toLowerCase()
+      .replace(/ё/g, "е")
+      .replace(/[^a-zа-я0-9\s]/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function words(s) {
+    return normalize(s).split(" ").filter(Boolean);
+  }
+
+  function renderCue() {
+    cueText.textContent = scriptEl.value || "Постави текста си тук…";
+    cueText.style.fontSize = `${fontSize.value}px`;
+    cueText.style.transform = `translateY(${offset}px)`;
+  }
+
+  function moveBy(delta) {
+    offset += delta;
+    const max = Math.max(0, cueText.scrollHeight - cueViewport.clientHeight + 100);
+    offset = Math.max(-max, Math.min(150, offset));
+    renderCue();
+  }
+
+  function resetCue() {
+    offset = 0;
+    lastMatchedWord = 0;
+    renderCue();
+  }
+
+  function startAuto() {
+    stopAuto();
+    const tick = () => {
+      const amount = 0.35 + Number(speed.value) * 0.18;
+      moveBy(-amount);
+    };
+    autoTimer = setInterval(tick, 35);
+    autoBtn.textContent = "⏸ Пауза";
+  }
+
+  function stopAuto() {
+    if (autoTimer) clearInterval(autoTimer);
+    autoTimer = null;
+    autoBtn.textContent = "▶ Авто";
+  }
+
+  function toggleAuto() {
+    if (autoTimer) stopAuto(); else startAuto();
+  }
+
+  async function startCamera() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      cameraStatus.textContent = "Няма API";
+      log("Този браузър не поддържа камера достъп. Използвай HTTPS (GitHub Pages) и актуален Chrome/Safari.");
+      return;
+    }
+
+    cameraBtn.disabled = true;
+    cameraStatus.textContent = "Стартира…";
+    log("Стартиране на камерата независимо от останалите модули…");
+
+    try {
+      try {
+        cameraStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "user" }, width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: true
+        });
+        log("Камера + микрофон са разрешени.");
+      } catch (firstError) {
+        log(`Камера+микрофон не стартираха (${firstError.name}). Пробвам камера без аудио…`);
+        cameraStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "user" } },
+          audio: false
+        });
+        log("Камерата работи. Микрофонът не е достъпен; записът ще бъде без звук.");
+      }
+
+      preview.srcObject = cameraStream;
+      preview.muted = true;
+      preview.setAttribute("playsinline", "");
+      await preview.play();
+
+      cameraStatus.textContent = cameraStream.getAudioTracks().length ? "Камера + звук" : "Само камера";
+      cameraBtn.textContent = "✓ Камерата работи";
+      recordBtn.disabled = !window.MediaRecorder;
+      log("Камерата е стартирана. Маркерът за лице е в отделния видео прозорец и не покрива текста.");
+    } catch (error) {
+      cameraBtn.disabled = false;
+      cameraStatus.textContent = "Грешка";
+      let msg = error.name || "UnknownError";
+      if (error.name === "NotAllowedError") msg += " — разреши камерата/микрофона за този сайт.";
+      else if (error.name === "NotFoundError") msg += " — не е намерена камера.";
+      else if (error.name === "NotReadableError") msg += " — камерата вероятно се използва от друга програма.";
+      else if (error.name === "SecurityError") msg += " — сайтът трябва да е HTTPS.";
+      else if (error.name === "OverconstrainedError") msg += " — неподдържани настройки; пробвай отново.";
+      log("Неуспешен старт на камерата: " + msg);
+    }
+  }
+
+  function chooseMimeType() {
+    const types = [
+      "video/webm;codecs=vp9,opus",
+      "video/webm;codecs=vp8,opus",
+      "video/webm",
+      "video/mp4"
+    ];
+    return types.find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || "";
+  }
+
+  function startRecording() {
+    if (!cameraStream || !window.MediaRecorder) {
+      log("Няма активна камера или MediaRecorder.");
+      return;
+    }
+    recordedChunks = [];
+    const mimeType = chooseMimeType();
+    try {
+      recorder = new MediaRecorder(cameraStream, mimeType ? { mimeType } : undefined);
+    } catch (e) {
+      log("MediaRecorder не може да започне: " + e.message);
+      return;
+    }
+
+    recorder.ondataavailable = e => {
+      if (e.data && e.data.size) recordedChunks.push(e.data);
+    };
+    recorder.onstop = saveRecording;
+    recorder.start(250);
+    recordBtn.disabled = true;
+    stopRecordBtn.disabled = false;
+    recordStatus.textContent = "● Записва…";
+    log("Записът започна.");
+  }
+
+  function stopRecording() {
+    if (recorder && recorder.state !== "inactive") {
+      recorder.stop();
+      recordStatus.textContent = "Обработва…";
+    }
+  }
+
+  function saveRecording() {
+    if (!recordedChunks.length) {
+      recordStatus.textContent = "Няма данни";
+      return;
+    }
+    const type = recorder.mimeType || "video/webm";
+    const blob = new Blob(recordedChunks, { type });
+    const ext = type.includes("mp4") ? "mp4" : "webm";
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `bg-autocue-${new Date().toISOString().replace(/[:.]/g, "-")}.${ext}`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    recordStatus.textContent = "Записът е готов";
+    recordBtn.disabled = false;
+    stopRecordBtn.disabled = true;
+    log("Записът е записан локално като файл.");
+  }
+
+  function browserSpeechSupported() {
+    return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+  }
+
+  function makeSpeech() {
+    const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Ctor) return null;
+    const r = new Ctor();
+    r.lang = "bg-BG";
+    r.continuous = true;
+    r.interimResults = true;
+    r.maxAlternatives = 3;
+    return r;
+  }
+
+  function findScriptMatch(spoken) {
+    const sw = words(scriptEl.value);
+    const tw = words(spoken);
+    if (!sw.length || !tw.length) return -1;
+
+    const recent = tw.slice(-10);
+    const start = Math.max(0, lastMatchedWord - 18);
+    const end = Math.min(sw.length, lastMatchedWord + 55);
+
+    // Prefer matching the longest recent spoken phrase against the script.
+    for (let n = Math.min(7, recent.length); n >= 2; n--) {
+      const phrase = recent.slice(-n).join(" ");
+      for (let i = start; i <= end - n; i++) {
+        if (sw.slice(i, i + n).join(" ") === phrase) return i + n;
+      }
+    }
+
+    // Fallback: match the latest recognized word.
+    const latest = recent[recent.length - 1];
+    for (let i = start; i < end; i++) {
+      if (sw[i] === latest) return i + 1;
+    }
+    return -1;
+  }
+
+  function moveCueToWord(wordIndex) {
+    const text = normalize(scriptEl.value);
+    const arr = text.split(" ");
+    if (!arr.length) return;
+    const clamped = Math.max(0, Math.min(arr.length, wordIndex));
+    const ratio = clamped / arr.length;
+    const max = Math.max(0, cueText.scrollHeight - cueViewport.clientHeight + 100);
+    offset = -ratio * max;
+    renderCue();
+  }
+
+  function attachSpeechHandlers(r) {
+    r.onstart = () => {
+      speechStatus.textContent = speechMode === "follow" ? "Следи…" : "Слуша…";
+      log("Българското гласово разпознаване е стартирано (bg-BG).");
+    };
+
+    r.onresult = event => {
+      let all = "";
+      for (let i = 0; i < event.results.length; i++) {
+        all += event.results[i][0].transcript + " ";
+      }
+      transcriptEl.textContent = all.trim() || "—";
+
+      if (speechMode === "follow") {
+        const idx = findScriptMatch(all);
+        if (idx > lastMatchedWord) {
+          lastMatchedWord = idx;
+          moveCueToWord(idx);
+        }
+      }
+    };
+
+    r.onerror = event => {
+      speechStatus.textContent = "Грешка";
+      log(`Гласово разпознаване: ${event.error}. Ако е "network" или "not-allowed", браузърът/мрежата не предоставя услугата.`);
+    };
+
+    r.onend = () => {
+      if (speechMode === "off") {
+        speechStopBtn.disabled = true;
+        followBtn.disabled = false;
+        speechTestBtn.disabled = false;
+        speechStatus.textContent = "Готово";
+        return;
+      }
+      const now = Date.now();
+      if (now - lastSpeechRestart < 900) return;
+      lastSpeechRestart = now;
+      // Chrome frequently ends a recognition session; restart without touching camera.
+      try { speech.start(); } catch (_) {}
+    };
+  }
+
+  function startSpeech(mode) {
+    if (!browserSpeechSupported()) {
+      speechStatus.textContent = "Няма поддръжка";
+      log("Този браузър не предлага SpeechRecognition. Камерата и ръчният autocue остават независими.");
+      return;
+    }
+
+    stopSpeech();
+    speechMode = mode;
+    speech = makeSpeech();
+    if (!speech) return;
+    attachSpeechHandlers(speech);
+    speechTestBtn.disabled = true;
+    followBtn.disabled = true;
+    speechStopBtn.disabled = false;
+    if (mode === "follow") lastMatchedWord = 0;
+    try {
+      speech.start();
+    } catch (e) {
+      log("Неуспешен старт на гласовото разпознаване: " + e.message);
+    }
+  }
+
+  function stopSpeech() {
+    speechMode = "off";
+    if (speech) {
+      try { speech.stop(); } catch (_) {}
+    }
+    speech = null;
+    speechStopBtn.disabled = true;
+    speechTestBtn.disabled = false;
+    followBtn.disabled = false;
+    speechStatus.textContent = "Готово";
+  }
+
+  upBtn.addEventListener("click", () => moveBy(90));
+  downBtn.addEventListener("click", () => moveBy(-90));
+  resetBtn.addEventListener("click", resetCue);
+  autoBtn.addEventListener("click", toggleAuto);
+  fontSize.addEventListener("input", renderCue);
+  speed.addEventListener("input", () => {});
+  scriptEl.addEventListener("input", () => { resetCue(); });
+  cameraBtn.addEventListener("click", startCamera);
+  recordBtn.addEventListener("click", startRecording);
+  stopRecordBtn.addEventListener("click", stopRecording);
+  speechTestBtn.addEventListener("click", () => startSpeech("test"));
+  followBtn.addEventListener("click", () => startSpeech("follow"));
+  speechStopBtn.addEventListener("click", stopSpeech);
+  sampleBtn.addEventListener("click", () => { scriptEl.value = sampleText; resetCue(); });
+
+  fullscreenBtn.addEventListener("click", async () => {
+    try {
+      if (!document.fullscreenElement) await $("teleprompterPanel").requestFullscreen();
+      else await document.exitFullscreen();
+    } catch (e) {
+      log("Целият екран не е разрешен от браузъра.");
+    }
+  });
+
+  window.addEventListener("beforeunload", () => {
+    stopSpeech();
+    stopAuto();
+    if (cameraStream) cameraStream.getTracks().forEach(t => t.stop());
+  });
+
+  if (!browserSpeechSupported()) {
+    speechStatus.textContent = "Провери браузъра";
+    log("SpeechRecognition не е наличен в този браузър. За български гласов autocue пробвай Chrome на Android/desktop.");
+  } else {
+    log("Гласовият модул е наличен. Камерата не зависи от него.");
+  }
+
+  renderCue();
+})();

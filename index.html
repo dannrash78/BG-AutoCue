@@ -1,4 +1,100 @@
-<!doctype html><html lang="bg"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0b1020"><title>BG AutoCue v2</title><link rel="stylesheet" href="style.css"></head><body><header><div><b>BG AutoCue</b><span>v2 • Български гласов autocue</span></div><button id="theme">☀️</button></header><main>
-<section class="script-panel"><div class="panel-head"><h2>Сценарий</h2><span id="count">0 думи</span></div><textarea id="script" placeholder="Постави текста, който ще четеш..."></textarea><div class="buttons"><button id="example">Пример</button><button id="clear">Изчисти</button></div><div class="settings"><label>Размер <input id="font" type="range" min="30" max="100" value="58"><output id="fontO">58px</output></label><label>Прозрачност <input id="opacity" type="range" min="40" max="100" value="94"><output id="opacityO">94%</output></label></div></section>
-<section class="teleprompter" id="teleprompter"><div class="cue-tools"><button id="voice" class="voice">🎙️ БГ ГЛАС: ИЗКЛ.</button><button id="start">▶️ Старт</button><button id="pause" disabled>⏸</button><button id="reset">↺</button></div><div class="cue-window"><div id="cueText"></div></div><div class="manual"><button id="up">▲</button><button id="down">▼</button></div><div class="match"><b>Разпознато:</b> <span id="heard">—</span></div></section>
-<section class="camera-panel"><div class="panel-head"><h2>Камера</h2><span id="faceStatus">Лице: —</span></div><div class="camera-wrap" id="cameraWrap"><video id="video" autoplay muted playsinline></video><canvas id="faceCanvas"></canvas><div class="camera-badge">Кадър за запис</div><div id="recLamp"></div></div><div class="buttons camera-buttons"><button id="camera">📷 Камера + микрофон</button><button id="record" disabled>⏺ Запис</button><a id="download" class="download hidden">⬇️ Запази видео</a></div><div class="diagnostics"><b>Гласово разпознаване:</b> <span id="speechState">проверява...</span><br><small>Език: <b>bg-BG</b>. Ако браузърът не предостави български Speech Recognition, приложението показва това ясно.</small></div></section></main><footer>Камерата, микрофонът и сценарият се обработват локално в браузъра. Няма качване на видео към този сайт.</footer><script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js"></script><script src="app.js"></script></body></html>
+<!doctype html>
+<html lang="bg">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#111">
+  <title>BG AutoCue v3</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <div>
+    <h1>BG AutoCue</h1>
+    <div class="subtitle">Български autocue + камера + гласово следене</div>
+  </div>
+  <button id="fullscreenBtn" class="secondary">⛶ Текст на цял екран</button>
+</header>
+
+<main>
+  <section class="record-layout">
+    <div id="teleprompterPanel" class="teleprompter-panel">
+      <div class="cue-toolbar">
+        <button id="upBtn" class="move">▲</button>
+        <button id="downBtn" class="move">▼</button>
+        <button id="resetBtn" class="secondary">↺ В началото</button>
+        <button id="autoBtn" class="secondary">▶ Авто</button>
+        <label class="range-label">Размер
+          <input id="fontSize" type="range" min="22" max="76" value="42">
+        </label>
+        <label class="range-label">Скорост
+          <input id="speed" type="range" min="1" max="10" value="4">
+        </label>
+      </div>
+
+      <div id="cueViewport" class="cue-viewport" aria-label="Autocue текст">
+        <div class="cue-guide"></div>
+        <div id="cueText" class="cue-text"></div>
+      </div>
+    </div>
+
+    <aside class="camera-column">
+      <div class="camera-card">
+        <div class="camera-title">
+          <span>КАМЕРА</span>
+          <span id="cameraStatus" class="status">Не е стартирана</span>
+        </div>
+        <div class="video-wrap">
+          <video id="preview" autoplay muted playsinline></video>
+          <div class="face-guide" aria-hidden="true">
+            <div class="face-oval"></div>
+            <div class="corner tl"></div><div class="corner tr"></div>
+            <div class="corner bl"></div><div class="corner br"></div>
+            <span>Лице</span>
+          </div>
+        </div>
+        <div class="camera-actions">
+          <button id="cameraBtn" class="primary">📷 Стартирай камера</button>
+          <button id="recordBtn" class="primary" disabled>⏺ Запис</button>
+          <button id="stopRecordBtn" class="danger" disabled>■ Стоп</button>
+        </div>
+        <div id="recordStatus" class="small-status">Няма запис</div>
+      </div>
+
+      <div class="voice-card">
+        <div class="camera-title">
+          <span>ГЛАСОВО СЛЕДЕНЕ</span>
+          <span id="speechStatus" class="status">Готово</span>
+        </div>
+        <div class="voice-actions">
+          <button id="speechTestBtn" class="primary">🎙 Тест на български</button>
+          <button id="followBtn" class="primary">▶ Гласово следене</button>
+          <button id="speechStopBtn" class="danger" disabled>■ Стоп глас</button>
+        </div>
+        <div class="transcript-label">Разпознат текст:</div>
+        <div id="transcript" class="transcript">—</div>
+      </div>
+    </aside>
+  </section>
+
+  <section class="editor-card">
+    <div class="editor-head">
+      <h2>Текст за autocue</h2>
+      <button id="sampleBtn" class="secondary">Зареди пример</button>
+    </div>
+    <textarea id="script" spellcheck="false" placeholder="Постави тук текста за интервюто..."></textarea>
+    <div class="editor-help">
+      Гласовото следене използва <b>bg-BG</b> на браузъра. Ако браузърът не предлага българско разпознаване,
+      ръчното движение и автоматичната скорост продължават да работят.
+    </div>
+  </section>
+
+  <section class="diagnostics-card">
+    <h2>Диагностика</h2>
+    <div id="diagnostics">Провери камерата и микрофона с бутоните по-горе.</div>
+  </section>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
