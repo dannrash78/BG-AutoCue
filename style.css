@@ -86,3 +86,45 @@ main{max-width:1500px;margin:auto;padding:12px}
 .float-stop{min-height:48px;width:100%;margin-bottom:8px}
 .move-stack{display:flex;flex-direction:column;gap:7px}
 .move-stack .move{min-height:64px}
+
+
+/* v3.2 desktop/mobile control placement */
+.mobile-settings{display:none}
+.settings-card{background:#15181d;border:1px solid #292e35;border-radius:16px;padding:12px}
+.setting-row{display:flex;flex-direction:column;gap:6px;color:#c5cad2;font-size:12px;font-weight:700;margin:10px 0}
+.setting-row input{width:100%}.setting-row select{background:#292e36;color:#fff;border:1px solid #414853;border-radius:9px;padding:9px}
+.desktop-setting-buttons{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.float-controls{position:fixed;left:14px;bottom:14px;z-index:100;width:126px;padding:8px;background:rgba(12,14,17,.9);border:1px solid #3a414b;border-radius:15px;backdrop-filter:blur(8px);box-shadow:0 6px 26px rgba(0,0,0,.4)}
+.float-controls[data-side="right"]{left:auto;right:14px}
+.float-controls .float-stop{display:block;width:100%;min-height:52px;margin:0 0 8px}
+.float-controls .float-row{display:flex;align-items:center;gap:8px}
+.move-stack{display:flex;flex-direction:column;gap:8px}
+.float-controls .move{min-width:70px;min-height:70px;font-size:34px;padding:8px}
+.float-controls .record-float{min-width:0;flex:1;min-height:70px;padding:8px;background:#e9edf2;color:#101215}
+@media(min-width:901px){
+  .cue-toolbar{display:none}
+  .settings-card{display:block}
+}
+@media(max-width:900px){
+  .settings-card{display:none}
+  .mobile-settings{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+  .mobile-settings .range-label{flex:1;min-width:130px}
+  .mobile-settings .hand-label{margin-left:auto}
+  .mobile-settings .hand-label select{background:#292e36;color:#fff;border:1px solid #414853;border-radius:9px;padding:8px}
+  .float-controls{left:8px;bottom:10px;width:112px}
+  .float-controls[data-side="right"]{left:auto;right:8px}
+  .float-controls .move{min-width:64px;min-height:64px;font-size:31px}
+  .float-controls .record-float{min-height:64px;font-size:12px}
+}
+@media(max-width:620px){
+  .mobile-settings{padding:6px}
+  .mobile-settings .range-label{font-size:11px;min-width:110px}
+  .mobile-settings input[type=range]{width:100%}
+  .float-controls{width:108px}
+  .float-controls .move{min-width:60px;min-height:60px}
+  .float-controls .record-float{min-height:60px}
+}
+/* Fullscreen keeps the complete recording workspace, camera and floating controls. */
+.record-layout:fullscreen{width:100vw;height:100vh;margin:0;padding:12px;background:#0d0f12;overflow:auto}
+.record-layout:fullscreen .teleprompter-panel{height:calc(100vh - 24px)}
+.record-layout:fullscreen .cue-viewport{height:calc(100vh - 82px)}

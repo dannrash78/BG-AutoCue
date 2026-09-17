@@ -13,37 +13,28 @@
     <h1>BG AutoCue</h1>
     <div class="subtitle">Български autocue + камера + гласово следене</div>
   </div>
-  <button id="fullscreenBtn" class="secondary">⛶ Текст на цял екран</button>
+  <button id="fullscreenBtn" class="secondary">⛶ Цял екран</button>
 </header>
 
 <main>
   <section class="record-layout">
     <div id="teleprompterPanel" class="teleprompter-panel">
-      <div class="cue-toolbar">
-        <div class="top-controls-left">
-          <label class="range-label">Размер
-            <input id="fontSize" type="range" min="22" max="76" value="42">
-          </label>
-          <label class="range-label">Прозрачност
-            <input id="cueOpacity" type="range" min="30" max="100" value="100">
-          </label>
-        </div>
-        <div class="top-controls-right">
-          <label class="hand-label">Контроли
-            <select id="handSide">
-              <option value="left">Лява ръка</option>
-              <option value="right">Дясна ръка</option>
-            </select>
-          </label>
-          <label class="range-label speed-control">Скорост
-            <input id="speed" type="range" min="1" max="10" value="4">
-          </label>
-          <button id="resetBtn" class="secondary">↺ В началото</button>
-          <button id="autoBtn" class="secondary">▶ Авто</button>
-        </div>
+      <div class="cue-toolbar mobile-settings">
+        <label class="range-label">Размер
+          <input id="fontSize" type="range" min="22" max="76" value="42">
+        </label>
+        <label class="range-label">Прозрачност на текста
+          <input id="cueOpacity" type="range" min="30" max="100" value="100">
+        </label>
+        <label class="hand-label">Контроли
+          <select id="handSide">
+            <option value="left">Лява ръка</option>
+            <option value="right">Дясна ръка</option>
+          </select>
+        </label>
       </div>
 
-      <div class="mobile-float-controls" id="mobileControls">
+      <div class="float-controls" id="mobileControls">
         <button id="stopRecordFloatBtn" class="danger float-stop" disabled>■ Стоп запис</button>
         <div class="float-row">
           <div class="move-stack">
@@ -95,6 +86,29 @@
         </div>
         <div class="transcript-label">Разпознат текст:</div>
         <div id="transcript" class="transcript">—</div>
+      </div>
+
+      <div class="settings-card">
+        <div class="camera-title"><span>КОНТРОЛИ</span><span class="status">Настройки</span></div>
+        <label class="setting-row">Размер на текста
+          <input id="fontSizeDesk" type="range" min="22" max="76" value="42">
+        </label>
+        <label class="setting-row">Прозрачност на текста
+          <input id="cueOpacityDesk" type="range" min="30" max="100" value="100">
+        </label>
+        <label class="setting-row">Скорост
+          <input id="speedDesk" type="range" min="1" max="10" value="4">
+        </label>
+        <label class="setting-row">Бутони за превъртане
+          <select id="handSideDesk">
+            <option value="left">Отляво</option>
+            <option value="right">Отдясно</option>
+          </select>
+        </label>
+        <div class="desktop-setting-buttons">
+          <button id="resetBtn" class="secondary">↺ В началото</button>
+          <button id="autoBtn" class="secondary">▶ Авто</button>
+        </div>
       </div>
     </aside>
   </section>
