@@ -46,3 +46,12 @@
 ## Ограничение на браузъра
 
 Българското SpeechRecognition зависи от браузъра и неговата услуга за разпознаване. Ако браузърът върне `network`, `not-allowed` или `service-not-allowed`, това е ограничение на услугата, а не причина камерата или ръчният autocue да спрат.
+
+
+## v4.1
+- Fullscreen keeps camera, voice controls and settings visible.
+- Right-hand scrolling controls stay beside the text, outside the right sidebar.
+- Floating Record stays enabled while recording and toggles Pause/Resume.
+- Mobile page has explicit vertical scrolling.
+- Bulgarian matching accepts shortened/prefix forms such as „здравей“ / „здравейте“.
+- Mouse wheel and keyboard arrows can also move the autocue.

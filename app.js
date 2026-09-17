@@ -102,7 +102,7 @@ function moveBy(px){
   offset=Math.max(-max,Math.min(80,offset+px));
   render();
 }
-function resetCue(){ offset=0; lastMatchedWord=0; render(); }
+function resetCue(){ offset=0; lastMatchedWord=0; finalSpeech=""; render(); }
 
 function startAuto(){
   stopAuto();
@@ -159,7 +159,7 @@ function mime(){
 }
 function updateRecordButtons(active){
   els.recordBtn.disabled=active||!stream;
-  els.recordFloat.disabled=active||!stream;
+  els.recordFloat.disabled=!stream;
   els.stopRecordBtn.disabled=!active;
   els.stopFloat.disabled=!active;
 }
@@ -229,7 +229,7 @@ function lev(a,b){
 function sim(a,b){
   if(a===b)return 1;
   if(!a||!b)return 0;
-  if(a.startsWith(b)||b.startsWith(a))return Math.min(a.length,b.length)/Math.max(a.length,b.length);
+  if((a.startsWith(b)||b.startsWith(a)) && Math.min(a.length,b.length)>=4){ const ratio=Math.min(a.length,b.length)/Math.max(a.length,b.length); return ratio>=0.55?0.93:ratio; }
   if(a.length>=5&&b.length>=5){
     const d=lev(a,b), m=Math.max(a.length,b.length);
     return 1-d/m;
@@ -269,7 +269,7 @@ function findMatch(spoken){
       const s=sim(sw[i],w);
       if(s>localBest.s)localBest={s,i};
     }
-    if(localBest.s>=0.84)return localBest.i+1;
+    if(localBest.s>=0.70)return localBest.i+1;
   }
   return -1;
 }
@@ -355,25 +355,32 @@ function stopSpeech(){
 }
 
 function toggleFullscreen(){
-  const active=document.body.classList.toggle("fullscreen-mode");
+  const active=!document.body.classList.contains("fullscreen-mode");
+  document.body.classList.toggle("fullscreen-mode",active);
   els.fullscreenBtn.textContent=active?"⛶ Изход от цял екран":"⛶ Цял екран";
-  if(active && document.documentElement.requestFullscreen){
-    document.documentElement.requestFullscreen().catch(()=>{});
-  }else if(!active && document.fullscreenElement && document.exitFullscreen){
+  if(active){
+    if(document.documentElement.requestFullscreen){
+      document.documentElement.requestFullscreen().catch(()=>log("Native fullscreen не е разрешен; използвам режим на цял екран в страницата."));
+    }else log("Браузърът няма Native Fullscreen API; използвам режим на цял екран в страницата.");
+  }else if(document.fullscreenElement && document.exitFullscreen){
     document.exitFullscreen().catch(()=>{});
   }
 }
+
 document.addEventListener("fullscreenchange",()=>{
   if(!document.fullscreenElement && document.body.classList.contains("fullscreen-mode")){
-    // Keep CSS fullscreen mode on devices that exit native fullscreen unexpectedly.
-    els.fullscreenBtn.textContent="⛶ Изход от цял екран";
+    document.body.classList.remove("fullscreen-mode");
+    els.fullscreenBtn.textContent="⛶ Цял екран";
   }
 });
 
-els.upBtn.addEventListener("click",()=>moveBy(110));
-els.downBtn.addEventListener("click",()=>moveBy(-110));
+const bindMove=(button,amount)=>button.addEventListener("click",e=>{e.preventDefault();moveBy(amount);});
+bindMove(els.upBtn,110);
+bindMove(els.downBtn,-110);
 els.resetBtn.addEventListener("click",resetCue);
 els.autoBtn.addEventListener("click",()=>autoTimer?stopAuto():startAuto());
+els.viewport.addEventListener("wheel",e=>{e.preventDefault();moveBy(-e.deltaY);},{passive:false});
+window.addEventListener("keydown",e=>{if(e.key==="ArrowDown")moveBy(-70);if(e.key==="ArrowUp")moveBy(70);});
 
 els.fontSizeDesk.addEventListener("input",()=>{els.fontSizeMobile.value=els.fontSizeDesk.value;render();});
 els.fontSizeMobile.addEventListener("input",()=>syncSettings("mobile"));
