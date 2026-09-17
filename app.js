@@ -9,7 +9,7 @@ const els = {
   recordBtn: $("recordBtn"), stopRecordBtn: $("stopRecordBtn"), recordStatus: $("recordStatus"),
   recordFloat: $("recordFloat"), stopFloat: $("stopFloat"),
   speechTestBtn: $("speechTestBtn"), followBtn: $("followBtn"), speechStopBtn: $("speechStopBtn"),
-  speechStatus: $("speechStatus"), transcript: $("transcript"),
+  speechStatus: $("speechStatus"), transcript: $("transcript"), speechHint: $("speechHint"),
   upBtn: $("upBtn"), downBtn: $("downBtn"), resetBtn: $("resetBtn"), autoBtn: $("autoBtn"),
   fontSizeDesk: $("fontSizeDesk"), opacityDesk: $("opacityDesk"), speedDesk: $("speedDesk"), handDesk: $("handDesk"),
   fontSizeMobile: $("fontSizeMobile"), opacityMobile: $("opacityMobile"), handMobile: $("handMobile"),
@@ -237,103 +237,143 @@ function sim(a,b){
   return 0;
 }
 function findMatch(spoken){
-  const sw=tokenize(els.script.value), tw=tokenize(spoken);
-  if(!sw.length||!tw.length)return -1;
+  const sw = tokenize(els.script.value);
+  const tw = tokenize(spoken);
+  if(!sw.length || !tw.length) return -1;
 
-  // Search only a sensible window ahead of the current cue position.
-  // We score complete phrases first, then tolerant word matches.
-  const recent=tw.slice(-14);
-  const start=Math.max(0,lastMatchedWord-1);
-  const end=Math.min(sw.length,lastMatchedWord+180);
-  let best={score:0,index:-1};
+  /*
+   * IMPORTANT:
+   * Never search hundreds of words ahead. That was the cause of large jumps:
+   * a fuzzy phrase from the first sentence could match a later sentence.
+   * The cue is sequential, so search only a small window immediately ahead.
+   */
+  const recent = tw.slice(-10);
+  const start = Math.max(0, lastMatchedWord - 1);
+  const end = Math.min(sw.length, lastMatchedWord + 32);
 
-  for(let n=Math.min(8,recent.length);n>=2;n--){
-    const phrase=recent.slice(-n);
-    for(let i=start;i<=end-n;i++){
-      let total=0,hits=0;
+  let best = {score:0, index:-1, length:0};
+
+  // Require at least 3 words for a strong phrase match.
+  for(let n=Math.min(7,recent.length); n>=3; n--){
+    const phrase = recent.slice(-n);
+    for(let i=start; i<=end-n; i++){
+      let total=0, hits=0;
       for(let j=0;j<n;j++){
         const s=sim(sw[i+j],phrase[j]);
-        if(s>=0.58){total+=s;hits++;}
+        if(s>=0.68){ total+=s; hits++; }
       }
       const coverage=hits/n;
-      const score=(coverage*0.7)+(hits===n?0.3:0);
-      if(hits>=Math.max(2,Math.ceil(n*0.5)) && score>best.score){
-        best={score,index:i+n};
+      const score=(total/Math.max(1,n))*0.72 + coverage*0.28;
+      if(hits>=Math.ceil(n*0.75) && score>best.score){
+        best={score,index:i+n,length:n};
       }
     }
-    if(best.score>=0.92)break;
+    if(best.score>=0.90) break;
   }
 
-  if(best.index>=0 && best.score>=0.62)return best.index;
+  /*
+   * A two-word match is accepted only when both words match strongly and
+   * the match is close to the current position. No single-word jumps.
+   */
+  if(best.index>=0 && best.score>=0.74) return best.index;
 
-  // Single-word fallback, with a stronger preference for words close to the cursor.
-  for(let j=recent.length-1;j>=0;j--){
-    const w=recent[j];
-    if(w.length<3)continue;
-    let local={score:0,index:-1};
-    for(let i=start;i<end;i++){
-      const s=sim(sw[i],w);
-      if(s>local.score)local={score:s,index:i};
+  if(recent.length>=2){
+    const a=recent[recent.length-2], b=recent[recent.length-1];
+    for(let i=start;i<Math.min(end-1,sw.length-1);i++){
+      if(sim(sw[i],a)>=0.88 && sim(sw[i+1],b)>=0.88) return i+2;
     }
-    if(local.index>=0 && local.score>=0.72)return local.index+1;
   }
   return -1;
 }
+
 function moveToWord(idx){
-  const text=normalize(els.script.value);
-  const arr=text.split(" ").filter(Boolean);
-  if(!arr.length)return;
+  const arr=tokenize(els.script.value);
+  if(!arr.length) return;
 
-  const clamped=Math.max(1,Math.min(arr.length,idx));
-  const prefix=arr.slice(0,clamped).join(" ");
-  const totalChars=Math.max(1,text.length);
-  const ratio=prefix.length/totalChars;
-
-  // Place the current spoken position around the green guide line.
-  // This makes the first few matches visibly move the cue instead of producing
-  // a nearly invisible 1-word change at the very top.
+  const clamped=Math.max(0,Math.min(arr.length,idx));
   const max=getMaxOffset();
-  const target=-Math.max(0,Math.min(max,ratio*max));
-  const guideTarget=-(max*ratio)+Math.min(120,els.viewport.clientHeight*0.10);
-  offset=Math.max(-max,Math.min(80,guideTarget));
-  render();
+  if(max<=0){ render(); return; }
+
+  /*
+   * The green line is the reading line. The spoken/current words should
+   * remain ABOVE it, while the next words approach and sit on the line.
+   * Calculate the actual pixel position of the target word instead of
+   * using a document-wide percentage. This prevents first-sentence jumps.
+   */
+  const textNode=els.cueText;
+  const probe=document.createElement("span");
+  probe.textContent=arr.slice(0,clamped).join(" ")+" ";
+  probe.style.cssText=[
+    "position:absolute","visibility:hidden","white-space:pre-wrap",
+    `font:${getComputedStyle(textNode).font}`,
+    `line-height:${getComputedStyle(textNode).lineHeight}`,
+    `width:${textNode.clientWidth}px`
+  ].join(";");
+  document.body.appendChild(probe);
+  const prefixHeight=probe.offsetHeight;
+  probe.remove();
+
+  const targetY=els.viewport.clientHeight*0.42;
+  // Keep a little of the spoken text above the line; target the next line.
+  let targetOffset=targetY-prefixHeight;
+  targetOffset=Math.min(80,targetOffset);
+
+  /*
+   * offset is the transform of the whole text. We need the prefix height
+   * to land around the green line. Keep motion monotonic and bounded.
+   */
+  const desired = Math.max(-max, Math.min(80, targetOffset));
+  if(desired < offset - 2 || idx > lastMatchedWord){
+    // For sequential matches, use the measured target but never leap more
+    // than 22% of the total cue in a single speech result.
+    const maxStep=Math.max(140,els.viewport.clientHeight*0.22);
+    offset=Math.max(-max, Math.max(offset-maxStep, desired));
+    render();
+  }
 }
+
 function handleSpeechResult(event){
   let display="";
   let freshFinal="";
-  let freshInterim="";
 
   for(let i=0;i<event.results.length;i++){
     const result=event.results[i];
     const t=result[0]?.transcript||"";
-    if(result.isFinal) freshFinal+=" "+t;
-    else if(i>=event.resultIndex) freshInterim+=" "+t;
     display+=t+" ";
+    if(result.isFinal) freshFinal+=" "+t;
   }
 
   els.transcript.textContent=display.trim()||"—";
+  if(speechMode!=="follow" || !freshFinal.trim()) return;
 
-  if(speechMode!=="follow")return;
+  // Only final speech advances the cue. Interim speech is displayed but
+  // cannot cause a jump.
+  finalSpeech=(finalSpeech+" "+freshFinal).slice(-500);
+  const candidate=findMatch(finalSpeech);
 
-  if(freshFinal.trim()) finalSpeech=(finalSpeech+" "+freshFinal).slice(-1200);
-  const candidateText=(finalSpeech+" "+freshInterim).trim();
-  if(!candidateText)return;
-
-  const candidate=findMatch(candidateText);
-  if(candidate>lastMatchedWord && Date.now()-lastMatchTime>100){
+  if(candidate>lastMatchedWord && candidate-lastMatchedWord<=34){
     lastMatchedWord=candidate;
     lastMatchTime=Date.now();
     moveToWord(candidate);
-    log(`Гласово следене: съвпадение намерено около дума ${candidate}.`);
+    log(`Гласово следене: намерено съвпадение около дума ${candidate}; позицията е преместена плавно.`);
   }
 }
+
 function attachSpeech(r){
   r.onstart=()=>{speechRunning=true;els.speechStatus.textContent=speechMode==="follow"?"Следи…":"Слуша…";};
   r.onresult=handleSpeechResult;
   r.onerror=e=>{
-    speechRunning=false;els.speechStatus.textContent="Грешка";
+    speechRunning=false;
+    els.speechStatus.textContent="Грешка";
+    const fatal=["not-allowed","service-not-allowed","language-not-supported","audio-capture"];
     log(`Гласово разпознаване: ${e.error}.`);
-    if(["not-allowed","service-not-allowed","language-not-supported"].includes(e.error)){speechMode="off";updateSpeechButtons();}
+    if(fatal.includes(e.error)){
+      speechMode="off";
+      updateSpeechButtons();
+      if(e.error==="not-allowed") els.speechHint.textContent="Разреши микрофона за сайта и опитай отново.";
+      else if(e.error==="language-not-supported") els.speechHint.textContent="Този браузър не предлага bg-BG SpeechRecognition.";
+      else els.speechHint.textContent="Браузърът не предостави гласовата услуга.";
+    }
   };
   r.onend=()=>{
     speechRunning=false;
@@ -374,21 +414,19 @@ function startSpeech(mode){
   attachSpeech(speech);
   updateSpeechButtons();
 
-  // Some Chromium builds reject start() when a previous session ended only
-  // milliseconds ago. A short delay makes Test -> Follow reliable.
-  setTimeout(()=>{
-    if(speechMode!==mode||!speech)return;
-    try{
-      speech.start();
-      log(mode==="follow"
-        ?"Гласовото следене е стартирано. Започни да четеш първото изречение от текста."
-        :"Тестът за български е стартиран. Кажи няколко думи.");
-    }catch(e){
-      els.speechStatus.textContent="Грешка";
-      log("Неуспешен старт на речта: "+e.message);
-      updateSpeechButtons();
-    }
-  },220);
+  // Start directly inside the button click. This is important on mobile
+  // browsers, where a delayed SpeechRecognition.start() can lose the
+  // user-gesture permission.
+  try{
+    speech.start();
+    log(mode==="follow"
+      ?"Гласовото следене е стартирано. Започни да четеш първото изречение от текста."
+      :"Тестът за български е стартиран. Кажи няколко думи.");
+  }catch(e){
+    els.speechStatus.textContent="Грешка";
+    log("Неуспешен старт на речта: "+e.message);
+    updateSpeechButtons();
+  }
 }
 function stopSpeech(){
   speechMode="off";clearTimeout(restartTimer);
@@ -469,5 +507,10 @@ els.opacityMobile.value=els.opacityDesk.value;
 els.handMobile.value=els.handDesk.value;
 syncHand("left");
 render();
-if(!speechSupported())log("SpeechRecognition не е наличен. Пробвай актуален Chrome; останалите функции са независими.");
+if(!speechSupported()){
+  log("SpeechRecognition не е наличен. Пробвай актуален Chrome/Edge; останалите функции са независими.");
+  if(els.speechHint) els.speechHint.textContent="Този браузър не предлага SpeechRecognition. Камерата и ръчният autocue работят независимо.";
+}else{
+  if(els.speechHint) els.speechHint.textContent="bg-BG е наличен. На телефон започвай от бутон „Тест на български“.";
+}
 })();

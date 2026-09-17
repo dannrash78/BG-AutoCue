@@ -67,3 +67,14 @@
 - Мобилните контроли вече не са `position: fixed`, за да не блокират достъпа до редактора и настройките.
 - В мобилен fullscreen текстът има собствена широка зона, а камерата/гласът са в отделна тясна колона.
 - Плаващите контроли не покриват основната текстова зона в мобилен fullscreen.
+
+
+## v4.3
+
+- Speech follow no longer searches far ahead in the script; this prevents a first sentence from jumping near the end.
+- Interim speech is displayed but does not move the cue; final speech is required for movement.
+- Matching is sequential and limited to a short forward window.
+- Cue movement is measured against the actual text layout so the next words approach the green guide line.
+- Recording buttons are explicitly grouped as Record / Stop.
+- SpeechRecognition starts directly from the button gesture, improving mobile-browser compatibility.
+- Mobile page scrolling is explicitly preserved outside fullscreen.

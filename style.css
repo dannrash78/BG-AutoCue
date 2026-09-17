@@ -176,3 +176,26 @@ body.fullscreen-mode .float-controls{z-index:250}
   body.fullscreen-mode .float-controls .record-row button{font-size:8px;min-width:0;min-height:42px}
   body.fullscreen-mode .cue-text{left:2%;right:2%;padding-top:27%;padding-bottom:50%}
 }
+
+
+/* v4.3 fixes */
+.record-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.speech-hint{font-size:11px;line-height:1.35;color:#8f99a7;margin-top:7px}
+body.fullscreen-mode .camera-column .record-row{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+body.fullscreen-mode .camera-column .record-row button{min-width:0}
+@media(max-width:900px){
+  .record-row{grid-template-columns:1fr 1fr}
+  .camera-column{overflow:visible!important}
+  .speech-hint{font-size:10px}
+}
+@media(max-width:620px){
+  html,body{overflow-y:auto!important;height:auto;min-height:100%}
+  body{touch-action:pan-y}
+  main{overflow:visible}
+  .record-layout{overflow:visible}
+  .camera-column{overflow:visible!important}
+  .float-controls{z-index:120}
+  body.fullscreen-mode{height:100dvh;overflow:hidden!important}
+  body.fullscreen-mode main{height:100dvh;overflow:hidden}
+  body.fullscreen-mode .camera-column{overflow-y:auto!important;-webkit-overflow-scrolling:touch}
+}

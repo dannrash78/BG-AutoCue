@@ -68,8 +68,10 @@
       </div>
       <div class="camera-actions">
         <button id="cameraBtn" class="primary">📷 Стартирай камера</button>
-        <button id="recordBtn" class="primary" disabled>⏺ Запис</button>
-        <button id="stopRecordBtn" class="danger" disabled>■ Стоп</button>
+        <div class="record-row">
+          <button id="recordBtn" class="primary" disabled>⏺ Запис</button>
+          <button id="stopRecordBtn" class="danger" disabled>■ Стоп</button>
+        </div>
       </div>
       <div id="recordStatus" class="small-status">Няма запис</div>
     </div>
@@ -86,6 +88,7 @@
       </div>
       <div class="transcript-label">Разпознат текст:</div>
       <div id="transcript" class="transcript">—</div>
+      <div id="speechHint" class="speech-hint">Гласовото разпознаване използва услугата на браузъра.</div>
     </div>
 
     <div class="settings-card">
