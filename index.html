@@ -20,16 +20,38 @@
   <section class="record-layout">
     <div id="teleprompterPanel" class="teleprompter-panel">
       <div class="cue-toolbar">
-        <button id="upBtn" class="move">▲</button>
-        <button id="downBtn" class="move">▼</button>
-        <button id="resetBtn" class="secondary">↺ В началото</button>
-        <button id="autoBtn" class="secondary">▶ Авто</button>
-        <label class="range-label">Размер
-          <input id="fontSize" type="range" min="22" max="76" value="42">
-        </label>
-        <label class="range-label">Скорост
-          <input id="speed" type="range" min="1" max="10" value="4">
-        </label>
+        <div class="top-controls-left">
+          <label class="range-label">Размер
+            <input id="fontSize" type="range" min="22" max="76" value="42">
+          </label>
+          <label class="range-label">Прозрачност
+            <input id="cueOpacity" type="range" min="30" max="100" value="100">
+          </label>
+        </div>
+        <div class="top-controls-right">
+          <label class="hand-label">Контроли
+            <select id="handSide">
+              <option value="left">Лява ръка</option>
+              <option value="right">Дясна ръка</option>
+            </select>
+          </label>
+          <label class="range-label speed-control">Скорост
+            <input id="speed" type="range" min="1" max="10" value="4">
+          </label>
+          <button id="resetBtn" class="secondary">↺ В началото</button>
+          <button id="autoBtn" class="secondary">▶ Авто</button>
+        </div>
+      </div>
+
+      <div class="mobile-float-controls" id="mobileControls">
+        <button id="stopRecordFloatBtn" class="danger float-stop" disabled>■ Стоп запис</button>
+        <div class="float-row">
+          <div class="move-stack">
+            <button id="upBtn" class="move">▲</button>
+            <button id="downBtn" class="move">▼</button>
+          </div>
+          <button id="recordFloatBtn" class="record-float" disabled>⏺ Запис</button>
+        </div>
       </div>
 
       <div id="cueViewport" class="cue-viewport" aria-label="Autocue текст">

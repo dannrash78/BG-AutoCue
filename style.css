@@ -41,11 +41,20 @@ main{max-width:1500px;margin:auto;padding:12px}
   .topbar{align-items:flex-start}.topbar .secondary{font-size:11px;padding:9px}
   main{padding:7px}.record-layout{display:flex;flex-direction:column}
   .teleprompter-panel{order:1;width:100%}.camera-column{order:2;width:100%;display:grid;grid-template-columns:1fr 1fr}
-  .cue-viewport{height:66vh;min-height:390px}
+  .cue-viewport{height:72vh;min-height:430px}
   .cue-text{left:4%;right:4%;font-size:42px}
-  .cue-toolbar{position:sticky;top:0;z-index:5}
-  .move{min-width:74px;min-height:64px;font-size:30px}
+  .cue-toolbar{position:sticky;top:0;z-index:8;padding:7px}
+  .top-controls-left,.top-controls-right{width:100%;justify-content:space-between;gap:7px}
+  .top-controls-left .range-label,.top-controls-right .range-label{flex:1}
+  .range-label input{flex:1;min-width:70px}
+  .hand-label{margin-left:auto}
+  .mobile-float-controls{display:block;position:fixed;left:9px;bottom:12px;z-index:50;width:104px;padding:7px;background:rgba(12,14,17,.88);border:1px solid #3a414b;border-radius:14px;backdrop-filter:blur(7px);box-shadow:0 5px 25px rgba(0,0,0,.35)}
+  .mobile-float-controls[data-side="right"]{left:auto;right:9px}
+  .mobile-float-controls .float-row{display:flex;align-items:center;gap:7px}
+  .move{min-width:64px;min-height:64px;font-size:30px}
   .camera-card,.voice-card{min-width:0}
+  .camera-card .camera-actions{display:none}
+  .camera-card .small-status{display:none}
 }
 @media(max-width:620px){
   .topbar{position:static}.subtitle{max-width:210px}
@@ -53,8 +62,27 @@ main{max-width:1500px;margin:auto;padding:12px}
   .camera-column{display:flex}
   .camera-card{max-width:310px;width:100%;align-self:center}
   .voice-card{width:100%}
-  .cue-viewport{height:63vh;min-height:360px}
+  .cue-viewport{height:70vh;min-height:390px}
   .cue-text{font-size:38px;line-height:1.42}
-  .cue-toolbar{gap:6px}.cue-toolbar .secondary{padding:10px 11px}
-  .range-label{width:100%;justify-content:space-between;margin:0}.range-label input{width:62%}
+  .cue-toolbar{gap:5px}
+  .top-controls-left,.top-controls-right{flex-wrap:nowrap}
+  .top-controls-left .range-label{min-width:0}
+  .top-controls-left .range-label input{width:55px}
+  .top-controls-right .speed-control{display:none}
+  .top-controls-right #resetBtn,.top-controls-right #autoBtn{font-size:11px;padding:9px 8px}
+  .hand-label{font-size:11px;white-space:nowrap}
+  .hand-label select{padding:7px 6px;font-size:11px;max-width:105px}
+  .mobile-float-controls{width:104px}
 }
+
+
+/* v3.1 mobile one-hand controls */
+.top-controls-left,.top-controls-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.top-controls-left{flex:1}.top-controls-right{justify-content:flex-end}
+.hand-label{display:flex;align-items:center;gap:7px;color:#c5cad2;font-size:13px}
+.hand-label select{background:#292e36;color:#fff;border:1px solid #414853;border-radius:9px;padding:8px 10px}
+.mobile-float-controls{display:none}
+.record-float{background:#e9edf2;color:#101215;border-radius:12px;font-weight:800;min-width:86px;min-height:64px}
+.float-stop{min-height:48px;width:100%;margin-bottom:8px}
+.move-stack{display:flex;flex-direction:column;gap:7px}
+.move-stack .move{min-height:64px}

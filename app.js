@@ -23,6 +23,11 @@
   const autoBtn = $("autoBtn");
   const fontSize = $("fontSize");
   const speed = $("speed");
+  const cueOpacity = $("cueOpacity");
+  const handSide = $("handSide");
+  const mobileControls = $("mobileControls");
+  const recordFloatBtn = $("recordFloatBtn");
+  const stopRecordFloatBtn = $("stopRecordFloatBtn");
   const fullscreenBtn = $("fullscreenBtn");
   const sampleBtn = $("sampleBtn");
 
@@ -62,7 +67,12 @@
   function renderCue() {
     cueText.textContent = scriptEl.value || "Постави текста си тук…";
     cueText.style.fontSize = `${fontSize.value}px`;
+    cueText.style.opacity = Number(cueOpacity.value) / 100;
     cueText.style.transform = `translateY(${offset}px)`;
+  }
+
+  function syncHandSide() {
+    mobileControls.dataset.side = handSide.value;
   }
 
   function moveBy(delta) {
@@ -157,6 +167,14 @@
     return types.find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || "";
   }
 
+  function setRecordButtons(recording) {
+    recordBtn.disabled = recording;
+    recordFloatBtn.disabled = recording;
+    stopRecordBtn.disabled = !recording;
+    stopRecordFloatBtn.disabled = !recording;
+    recordFloatBtn.textContent = recording ? "⏸ Пауза" : "⏺ Запис";
+  }
+
   function startRecording() {
     if (!cameraStream || !window.MediaRecorder) {
       log("Няма активна камера или MediaRecorder.");
@@ -176,10 +194,27 @@
     };
     recorder.onstop = saveRecording;
     recorder.start(250);
-    recordBtn.disabled = true;
-    stopRecordBtn.disabled = false;
+    setRecordButtons(true);
     recordStatus.textContent = "● Записва…";
     log("Записът започна.");
+  }
+
+  function toggleRecording() {
+    if (!recorder || recorder.state === "inactive") {
+      startRecording();
+      return;
+    }
+    if (recorder.state === "recording") {
+      recorder.pause();
+      recordStatus.textContent = "Ⅱ Пауза";
+      recordFloatBtn.textContent = "▶ Продължи";
+      log("Записът е на пауза.");
+    } else if (recorder.state === "paused") {
+      recorder.resume();
+      recordStatus.textContent = "● Записва…";
+      recordFloatBtn.textContent = "⏸ Пауза";
+      log("Записът продължи.");
+    }
   }
 
   function stopRecording() {
@@ -204,8 +239,7 @@
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     recordStatus.textContent = "Записът е готов";
-    recordBtn.disabled = false;
-    stopRecordBtn.disabled = true;
+    setRecordButtons(false);
     log("Записът е записан локално като файл.");
   }
 
@@ -348,6 +382,10 @@
   cameraBtn.addEventListener("click", startCamera);
   recordBtn.addEventListener("click", startRecording);
   stopRecordBtn.addEventListener("click", stopRecording);
+  recordFloatBtn.addEventListener("click", toggleRecording);
+  stopRecordFloatBtn.addEventListener("click", stopRecording);
+  handSide.addEventListener("change", syncHandSide);
+  cueOpacity.addEventListener("input", renderCue);
   speechTestBtn.addEventListener("click", () => startSpeech("test"));
   followBtn.addEventListener("click", () => startSpeech("follow"));
   speechStopBtn.addEventListener("click", stopSpeech);
@@ -375,5 +413,6 @@
     log("Гласовият модул е наличен. Камерата не зависи от него.");
   }
 
+  syncHandSide();
   renderCue();
 })();
