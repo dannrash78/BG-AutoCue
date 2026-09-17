@@ -199,3 +199,42 @@ body.fullscreen-mode .camera-column .record-row button{min-width:0}
   body.fullscreen-mode main{height:100dvh;overflow:hidden}
   body.fullscreen-mode .camera-column{overflow-y:auto!important;-webkit-overflow-scrolling:touch}
 }
+
+
+/* v4.4 — floating recording controls: icons only, above scrolling controls */
+.float-controls .record-row{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:6px;
+  margin-bottom:7px;
+}
+.float-controls .record-float,
+.float-controls .stop-float{
+  min-width:0;
+  width:100%;
+  min-height:52px;
+  padding:6px;
+  font-size:25px;
+  line-height:1;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.float-controls .record-float{background:#e9edf2;color:#101215}
+.float-controls .stop-float{background:#8f3434;color:#fff}
+.float-controls .move-stack{
+  display:flex;
+  flex-direction:column;
+  gap:7px;
+}
+.float-controls .move{
+  width:100%;
+}
+@media(max-width:620px){
+  .float-controls .record-row{gap:5px;margin-bottom:6px}
+  .float-controls .record-float,
+  .float-controls .stop-float{
+    min-height:50px;
+    font-size:24px;
+  }
+}

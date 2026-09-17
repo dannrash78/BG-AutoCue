@@ -159,6 +159,8 @@ function mime(){
 }
 function updateRecordButtons(active){
   els.recordBtn.disabled=active||!stream;
+  // The floating recording button must stay enabled during recording:
+  // recording -> pause -> continue.
   els.recordFloat.disabled=!stream;
   els.stopRecordBtn.disabled=!active;
   els.stopFloat.disabled=!active;
@@ -174,16 +176,16 @@ function startRecording(){
   recorder.start(250);
   updateRecordButtons(true);
   els.recordStatus.textContent="● Записва…";
-  els.recordFloat.textContent="⏸ Пауза";
+  els.recordFloat.textContent="Ⅱ";
   log("Видео записът започна.");
 }
 function toggleRecording(){
   if(!recorder||recorder.state==="inactive"){startRecording();return;}
   if(recorder.state==="recording"){
-    recorder.pause(); els.recordStatus.textContent="Ⅱ Пауза"; els.recordFloat.textContent="▶ Продължи";
+    recorder.pause(); els.recordStatus.textContent="Ⅱ Пауза"; els.recordFloat.textContent="▶";
     log("Видео записът е на пауза.");
   }else if(recorder.state==="paused"){
-    recorder.resume(); els.recordStatus.textContent="● Записва…"; els.recordFloat.textContent="⏸ Пауза";
+    recorder.resume(); els.recordStatus.textContent="● Записва…"; els.recordFloat.textContent="Ⅱ";
     log("Видео записът продължи.");
   }
 }
@@ -200,7 +202,7 @@ function saveRecording(){
   a.href=url;a.download=`bg-autocue-${Date.now()}.${ext}`;document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(url),1500);
   els.recordStatus.textContent="✓ Записът е готов";
-  els.recordFloat.textContent="⏺ Запис";
+  els.recordFloat.textContent="●";
   updateRecordButtons(false);
   log("Файлът с видеото е създаден и изтеглянето е стартирано.");
 }
