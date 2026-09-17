@@ -239,74 +239,92 @@ function sim(a,b){
 function findMatch(spoken){
   const sw=tokenize(els.script.value), tw=tokenize(spoken);
   if(!sw.length||!tw.length)return -1;
-  const recent=tw.slice(-10);
-  const start=Math.max(0,lastMatchedWord-2);
-  const end=Math.min(sw.length,lastMatchedWord+140);
-  let best={score:0,index:-1,hits:0};
 
-  // Strong phrase matching, allowing small recognition differences.
+  // Search only a sensible window ahead of the current cue position.
+  // We score complete phrases first, then tolerant word matches.
+  const recent=tw.slice(-14);
+  const start=Math.max(0,lastMatchedWord-1);
+  const end=Math.min(sw.length,lastMatchedWord+180);
+  let best={score:0,index:-1};
+
   for(let n=Math.min(8,recent.length);n>=2;n--){
     const phrase=recent.slice(-n);
     for(let i=start;i<=end-n;i++){
       let total=0,hits=0;
       for(let j=0;j<n;j++){
         const s=sim(sw[i+j],phrase[j]);
-        if(s>=0.68){total+=s;hits++;}
+        if(s>=0.58){total+=s;hits++;}
       }
-      const score=hits/n + (hits===n?0.35:0);
-      if(hits>=Math.max(2,Math.ceil(n*0.6))&&score>best.score)
-        best={score,index:i+n,hits};
+      const coverage=hits/n;
+      const score=(coverage*0.7)+(hits===n?0.3:0);
+      if(hits>=Math.max(2,Math.ceil(n*0.5)) && score>best.score){
+        best={score,index:i+n};
+      }
     }
+    if(best.score>=0.92)break;
   }
-  if(best.index>=0)return best.index;
 
-  // Distinctive single-word fallback.
+  if(best.index>=0 && best.score>=0.62)return best.index;
+
+  // Single-word fallback, with a stronger preference for words close to the cursor.
   for(let j=recent.length-1;j>=0;j--){
     const w=recent[j];
-    if(w.length<4)continue;
-    let localBest={s:0,i:-1};
+    if(w.length<3)continue;
+    let local={score:0,index:-1};
     for(let i=start;i<end;i++){
       const s=sim(sw[i],w);
-      if(s>localBest.s)localBest={s,i};
+      if(s>local.score)local={score:s,index:i};
     }
-    if(localBest.s>=0.70)return localBest.i+1;
+    if(local.index>=0 && local.score>=0.72)return local.index+1;
   }
   return -1;
 }
 function moveToWord(idx){
-  const words=els.cueText.textContent.split(/(\s+)/);
-  let chars=0,targetIndex=-1,count=0;
-  const wanted=Math.max(0,idx-1);
-  for(const part of words){
-    if(/\s+/.test(part)){chars+=part.length;continue;}
-    if(count===wanted){targetIndex=chars;break;}
-    chars+=part.length;count++;
-  }
-  const text=els.cueText.textContent;
-  const before=text.slice(0,targetIndex<0?0:targetIndex);
-  const approxLines=(before.length/38);
-  const targetTop=approxLines*els.fontSizeDesk.value*1.45;
+  const text=normalize(els.script.value);
+  const arr=text.split(" ").filter(Boolean);
+  if(!arr.length)return;
+
+  const clamped=Math.max(1,Math.min(arr.length,idx));
+  const prefix=arr.slice(0,clamped).join(" ");
+  const totalChars=Math.max(1,text.length);
+  const ratio=prefix.length/totalChars;
+
+  // Place the current spoken position around the green guide line.
+  // This makes the first few matches visibly move the cue instead of producing
+  // a nearly invisible 1-word change at the very top.
   const max=getMaxOffset();
-  offset=Math.max(-max,Math.min(60,els.viewport.clientHeight*0.42-targetTop));
+  const target=-Math.max(0,Math.min(max,ratio*max));
+  const guideTarget=-(max*ratio)+Math.min(120,els.viewport.clientHeight*0.10);
+  offset=Math.max(-max,Math.min(80,guideTarget));
   render();
 }
 function handleSpeechResult(event){
   let display="";
-  let fresh="";
+  let freshFinal="";
+  let freshInterim="";
+
   for(let i=0;i<event.results.length;i++){
-    const t=event.results[i][0].transcript;
+    const result=event.results[i];
+    const t=result[0]?.transcript||"";
+    if(result.isFinal) freshFinal+=" "+t;
+    else if(i>=event.resultIndex) freshInterim+=" "+t;
     display+=t+" ";
-    if(i>=event.resultIndex)fresh+=t+" ";
   }
+
   els.transcript.textContent=display.trim()||"—";
-  if(speechMode==="follow"){
-    // Keep a compact rolling spoken buffer and search from the current cursor.
-    if(fresh.trim()) finalSpeech=(finalSpeech+" "+fresh).slice(-900);
-    const candidate=findMatch(fresh.trim()||finalSpeech);
-    if(candidate>lastMatchedWord && Date.now()-lastMatchTime>180){
-      lastMatchedWord=candidate;lastMatchTime=Date.now();moveToWord(candidate);
-      log(`Гласово следене: намерено съвпадение около дума ${candidate}.`);
-    }
+
+  if(speechMode!=="follow")return;
+
+  if(freshFinal.trim()) finalSpeech=(finalSpeech+" "+freshFinal).slice(-1200);
+  const candidateText=(finalSpeech+" "+freshInterim).trim();
+  if(!candidateText)return;
+
+  const candidate=findMatch(candidateText);
+  if(candidate>lastMatchedWord && Date.now()-lastMatchTime>100){
+    lastMatchedWord=candidate;
+    lastMatchTime=Date.now();
+    moveToWord(candidate);
+    log(`Гласово следене: съвпадение намерено около дума ${candidate}.`);
   }
 }
 function attachSpeech(r){
@@ -336,17 +354,41 @@ function updateSpeechButtons(){
 function startSpeech(mode){
   if(!speechSupported()){
     log("Този браузър няма SpeechRecognition. Камерата и ръчният autocue работят независимо.");
-    els.speechStatus.textContent="Няма поддръжка";return;
+    els.speechStatus.textContent="Няма поддръжка";
+    return;
   }
-  stopSpeech();
-  speechMode=mode;finalSpeech="";
+
+  // Stop any previous recognition cleanly before creating a new session.
+  speechMode="off";
+  clearTimeout(restartTimer);
+  if(speech){try{speech.abort();}catch(_){}}
+  speech=null;
+  speechRunning=false;
+
+  speechMode=mode;
+  finalSpeech="";
   if(mode==="follow"){lastMatchedWord=0;offset=0;render();}
-  speech=newSpeech();if(!speech)return;
-  attachSpeech(speech);updateSpeechButtons();
-  try{
-    speech.start();
-    log(mode==="follow"?"Гласовото следене е стартирано. Започни да четеш първото изречение от текста.":"Тестът за български е стартиран. Кажи няколко думи.");
-  }catch(e){log("Неуспешен старт на речта: "+e.message);}
+
+  speech=newSpeech();
+  if(!speech)return;
+  attachSpeech(speech);
+  updateSpeechButtons();
+
+  // Some Chromium builds reject start() when a previous session ended only
+  // milliseconds ago. A short delay makes Test -> Follow reliable.
+  setTimeout(()=>{
+    if(speechMode!==mode||!speech)return;
+    try{
+      speech.start();
+      log(mode==="follow"
+        ?"Гласовото следене е стартирано. Започни да четеш първото изречение от текста."
+        :"Тестът за български е стартиран. Кажи няколко думи.");
+    }catch(e){
+      els.speechStatus.textContent="Грешка";
+      log("Неуспешен старт на речта: "+e.message);
+      updateSpeechButtons();
+    }
+  },220);
 }
 function stopSpeech(){
   speechMode="off";clearTimeout(restartTimer);
@@ -368,9 +410,11 @@ function toggleFullscreen(){
 }
 
 document.addEventListener("fullscreenchange",()=>{
-  if(!document.fullscreenElement && document.body.classList.contains("fullscreen-mode")){
-    document.body.classList.remove("fullscreen-mode");
-    els.fullscreenBtn.textContent="⛶ Цял екран";
+  // CSS fullscreen remains active until the user presses our button again.
+  // This prevents a browser fullscreen transition from destroying the layout.
+  if(document.fullscreenElement){
+    document.body.classList.add("fullscreen-mode");
+    els.fullscreenBtn.textContent="⛶ Изход от цял екран";
   }
 });
 
@@ -380,7 +424,20 @@ bindMove(els.downBtn,-110);
 els.resetBtn.addEventListener("click",resetCue);
 els.autoBtn.addEventListener("click",()=>autoTimer?stopAuto():startAuto());
 els.viewport.addEventListener("wheel",e=>{e.preventDefault();moveBy(-e.deltaY);},{passive:false});
-window.addEventListener("keydown",e=>{if(e.key==="ArrowDown")moveBy(-70);if(e.key==="ArrowUp")moveBy(70);});
+let touchStartY=null;
+els.viewport.addEventListener("touchstart",e=>{touchStartY=e.touches[0]?.clientY??null;},{passive:true});
+els.viewport.addEventListener("touchmove",e=>{
+  if(touchStartY===null)return;
+  const y=e.touches[0]?.clientY??touchStartY;
+  const dy=y-touchStartY;
+  if(Math.abs(dy)>3){moveBy(dy>0?6:-6);touchStartY=y;}
+  e.preventDefault();
+},{passive:false});
+els.viewport.addEventListener("touchend",()=>{touchStartY=null;},{passive:true});
+window.addEventListener("keydown",e=>{
+  if(e.key==="ArrowDown"){e.preventDefault();moveBy(-70);}
+  if(e.key==="ArrowUp"){e.preventDefault();moveBy(70);}
+});
 
 els.fontSizeDesk.addEventListener("input",()=>{els.fontSizeMobile.value=els.fontSizeDesk.value;render();});
 els.fontSizeMobile.addEventListener("input",()=>syncSettings("mobile"));

@@ -52,7 +52,7 @@ main{max-width:1500px;margin:auto;padding:12px}
 .hand-label select{background:#292e36;color:#fff;border:1px solid #414853;border-radius:9px;padding:8px}
 
 body.fullscreen-mode{overflow:hidden}
-body.fullscreen-mode .topbar{position:fixed;left:0;right:0;top:0}
+body.fullscreen-mode .topbar{position:fixed;left:0;right:0;top:0;z-index:200}
 body.fullscreen-mode main{max-width:none;padding:0;padding-top:58px;height:100vh;overflow:hidden}
 body.fullscreen-mode .record-layout{height:calc(100vh - 58px);grid-template-columns:minmax(0,1fr) 330px;gap:8px}
 body.fullscreen-mode .teleprompter-panel{height:100%;border-radius:0}
@@ -64,9 +64,9 @@ body.fullscreen-mode .setting-row{margin:7px 0}
 body.fullscreen-mode .editor-card,body.fullscreen-mode .diagnostics-card{display:none}
 body.fullscreen-mode .float-controls[data-side="left"]{left:10px;right:auto}
 body.fullscreen-mode .float-controls[data-side="right"]{right:348px;left:auto}
+body.fullscreen-mode .float-controls{z-index:250}
 
 @media(max-width:900px){
-  .topbar{align-items:flex-start}
   .topbar .secondary{font-size:11px;padding:9px}
   main{padding:7px}
   .record-layout{display:flex;flex-direction:column}
@@ -81,40 +81,98 @@ body.fullscreen-mode .float-controls[data-side="right"]{right:348px;left:auto}
   .settings-card{display:none}
   .camera-card .camera-actions{display:none}
   .camera-card .small-status{display:none}
-  .float-controls{left:8px;bottom:10px;width:112px}
+  .float-controls{left:8px;bottom:10px;width:118px}
   .float-controls[data-side="right"]{left:auto;right:8px}
   .float-controls .move{min-width:64px;min-height:64px;font-size:31px}
-  .float-controls .record-float{min-height:64px;font-size:12px}
+  .float-controls .record-float,.float-controls .float-stop{min-height:52px;font-size:11px}
+  .record-row{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:7px}
   body.fullscreen-mode main{padding-top:52px}
   body.fullscreen-mode .record-layout{height:calc(100vh - 52px)}
   body.fullscreen-mode main{overflow:hidden}
-  body.fullscreen-mode .record-layout{display:grid;grid-template-columns:minmax(0,1fr) 285px;gap:5px;height:calc(100vh - 52px)}
-  body.fullscreen-mode .teleprompter-panel{width:100%;height:100%}
-  body.fullscreen-mode .camera-column{display:flex;position:relative;right:auto;top:auto;width:285px;height:100%;z-index:40;background:#0d0f12;overflow-y:auto;padding:5px}
-  body.fullscreen-mode .camera-column .camera-card,body.fullscreen-mode .camera-column .voice-card,body.fullscreen-mode .camera-column .settings-card{width:100%}
+  /* Mobile fullscreen is a clean split: text gets the large left area; controls get a narrow right rail. */
+  body.fullscreen-mode .record-layout{display:grid;grid-template-columns:minmax(0,1fr) 104px;gap:5px;height:calc(100vh - 52px)}
+  body.fullscreen-mode .teleprompter-panel{width:100%;height:100%;min-width:0}
+  body.fullscreen-mode .mobile-settings{display:flex;position:absolute;left:5px;right:5px;top:5px;z-index:20;background:rgba(21,24,29,.92);border-radius:10px}
+  body.fullscreen-mode .mobile-settings .range-label input{max-width:90px}
+  body.fullscreen-mode .camera-column{display:flex;position:relative;right:auto;top:auto;width:104px;height:100%;z-index:40;background:#0d0f12;overflow-y:auto;padding:4px}
+  body.fullscreen-mode .camera-column .camera-card,
+  body.fullscreen-mode .camera-column .voice-card,
+  body.fullscreen-mode .camera-column .settings-card{width:100%;padding:6px}
   body.fullscreen-mode .camera-column .camera-card .camera-actions{display:grid}
   body.fullscreen-mode .camera-column .settings-card{display:block}
-  body.fullscreen-mode .cue-text{left:3%;right:3%}
-  body.fullscreen-mode .float-controls[data-side="right"]{right:295px}
-  body.fullscreen-mode .float-controls[data-side="left"]{left:5px}
+  body.fullscreen-mode .camera-column .video-wrap{aspect-ratio:3/4}
+  body.fullscreen-mode .camera-column .voice-actions{grid-template-columns:1fr}
+  body.fullscreen-mode .camera-column .voice-actions button:first-child{grid-column:auto}
+  body.fullscreen-mode .camera-column .transcript{font-size:10px;min-height:40px}
+  body.fullscreen-mode .cue-text{left:3%;right:3%;padding-top:31%;padding-bottom:55%}
+  body.fullscreen-mode .float-controls[data-side="right"]{right:112px;left:auto}
+  body.fullscreen-mode .float-controls[data-side="left"]{left:4px}
+  body.fullscreen-mode .float-controls{width:96px}
 }
+
 @media(max-width:620px){
-  .topbar{position:static}
+  html{overflow-y:scroll}
+  body{min-height:100dvh;overflow-x:hidden;overflow-y:auto;touch-action:pan-y;padding-bottom:20px}
+  .topbar{position:relative}
   .subtitle{max-width:210px}
   .topbar h1{font-size:18px}
-  .camera-column{display:flex}
+  main{width:100%;min-height:0;padding:7px}
+  .record-layout{min-height:0}
+  .camera-column{display:flex;width:100%;overflow:visible}
   .camera-card{max-width:310px;width:100%;align-self:center}
   .voice-card{width:100%}
-  .mobile-settings{gap:6px;padding:6px}
+  .mobile-settings{gap:6px;padding:6px;position:relative;z-index:4}
   .mobile-settings .range-label{font-size:11px}
   .mobile-settings .hand-label{font-size:11px}
   .mobile-settings .hand-label select{font-size:11px;padding:7px 6px}
-  .cue-viewport{height:68vh;min-height:380px}
+  .cue-viewport{height:68dvh;min-height:380px}
   .cue-text{font-size:38px;line-height:1.42}
-  .float-controls{width:108px}
+  .float-controls{position:sticky;left:auto;right:auto;bottom:8px;margin:8px 8px 0 auto;width:118px}
+  .float-controls[data-side="left"]{margin-left:8px;margin-right:auto}
+  .float-controls[data-side="right"]{left:auto;right:auto;margin-left:auto;margin-right:8px}
   .float-controls .move{min-width:60px;min-height:60px}
-  .float-controls .record-float{min-height:60px}
-  .record-layout{min-height:0}
+  .float-controls .record-float,.float-controls .float-stop{min-height:52px}
+  .record-row{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:7px}
+  .record-row button{padding:7px 4px;font-size:10px}
   .editor-card,.diagnostics-card{margin-bottom:14px}
-  body{padding-bottom:10px}
+  .editor-card{scroll-margin-top:10px}
+  body.fullscreen-mode{overflow:hidden}
+  body.fullscreen-mode main{padding-top:52px}
+  body.fullscreen-mode .record-layout{
+    display:grid;grid-template-columns:minmax(0,1fr) 96px;gap:4px;
+    height:calc(100dvh - 52px);overflow:hidden
+  }
+  body.fullscreen-mode .teleprompter-panel{height:100%;min-width:0}
+  body.fullscreen-mode .cue-viewport{height:100%;min-height:0}
+  body.fullscreen-mode .mobile-settings{
+    position:absolute;left:4px;right:4px;top:4px;display:flex;
+    background:rgba(21,24,29,.94);border-radius:10px;z-index:30
+  }
+  body.fullscreen-mode .mobile-settings .range-label{min-width:0}
+  body.fullscreen-mode .mobile-settings .range-label input{max-width:55px}
+  body.fullscreen-mode .camera-column{
+    display:flex;width:96px;height:100%;padding:3px;overflow-y:auto;
+    background:#0d0f12;z-index:40
+  }
+  body.fullscreen-mode .camera-column .camera-card,
+  body.fullscreen-mode .camera-column .voice-card,
+  body.fullscreen-mode .camera-column .settings-card{width:100%;padding:5px}
+  body.fullscreen-mode .camera-column .camera-card .camera-actions{display:grid}
+  body.fullscreen-mode .camera-column .camera-title{font-size:9px}
+  body.fullscreen-mode .camera-column .status{font-size:8px}
+  body.fullscreen-mode .camera-column .video-wrap{aspect-ratio:3/4}
+  body.fullscreen-mode .camera-column .voice-actions{grid-template-columns:1fr}
+  body.fullscreen-mode .camera-column .voice-actions button:first-child{grid-column:auto}
+  body.fullscreen-mode .camera-column button{font-size:9px;padding:8px 4px}
+  body.fullscreen-mode .camera-column .transcript{font-size:9px;min-height:40px}
+  body.fullscreen-mode .camera-column .setting-row{font-size:9px}
+  body.fullscreen-mode .float-controls{
+    position:absolute;bottom:8px;width:88px;margin:0;z-index:100
+  }
+  body.fullscreen-mode .float-controls[data-side="left"]{left:4px;right:auto}
+  body.fullscreen-mode .float-controls[data-side="right"]{right:100px;left:auto}
+  body.fullscreen-mode .float-controls .move{min-width:54px;min-height:54px;font-size:27px}
+  body.fullscreen-mode .float-controls .record-row{gap:3px}
+  body.fullscreen-mode .float-controls .record-row button{font-size:8px;min-width:0;min-height:42px}
+  body.fullscreen-mode .cue-text{left:2%;right:2%;padding-top:27%;padding-bottom:50%}
 }
