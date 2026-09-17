@@ -1,511 +1,409 @@
 (() => {
-  "use strict";
+"use strict";
 
-  const $ = id => document.getElementById(id);
-  const scriptEl = $("script");
-  const cueText = $("cueText");
-  const cueViewport = $("cueViewport");
-  const preview = $("preview");
-  const cameraBtn = $("cameraBtn");
-  const recordBtn = $("recordBtn");
-  const stopRecordBtn = $("stopRecordBtn");
-  const cameraStatus = $("cameraStatus");
-  const recordStatus = $("recordStatus");
-  const diagnostics = $("diagnostics");
-  const speechStatus = $("speechStatus");
-  const transcriptEl = $("transcript");
-  const speechTestBtn = $("speechTestBtn");
-  const followBtn = $("followBtn");
-  const speechStopBtn = $("speechStopBtn");
-  const upBtn = $("upBtn");
-  const downBtn = $("downBtn");
-  const resetBtn = $("resetBtn");
-  const autoBtn = $("autoBtn");
-  const fontSize = $("fontSize");
-  const speed = $("speed");
-  const cueOpacity = $("cueOpacity");
-  const handSide = $("handSide");
-  const fontSizeDesk = $("fontSizeDesk");
-  const speedDesk = $("speedDesk");
-  const cueOpacityDesk = $("cueOpacityDesk");
-  const handSideDesk = $("handSideDesk");
-  const mobileControls = $("mobileControls");
-  const recordFloatBtn = $("recordFloatBtn");
-  const stopRecordFloatBtn = $("stopRecordFloatBtn");
-  const fullscreenBtn = $("fullscreenBtn");
-  const sampleBtn = $("sampleBtn");
+const $ = id => document.getElementById(id);
 
-  let cameraStream = null;
-  let recorder = null;
-  let recordedChunks = [];
-  let speech = null;
-  let speechMode = "off"; // off | test | follow
-  let autoTimer = null;
-  let offset = 0;
-  let lastSpeechRestart = 0;
-  let lastMatchedWord = 0;
-  let speechBusy = false;
-  let speechRestartTimer = null;
+const els = {
+  script: $("script"), cueText: $("cueText"), viewport: $("cueViewport"),
+  cameraBtn: $("cameraBtn"), preview: $("preview"), cameraStatus: $("cameraStatus"),
+  recordBtn: $("recordBtn"), stopRecordBtn: $("stopRecordBtn"), recordStatus: $("recordStatus"),
+  recordFloat: $("recordFloat"), stopFloat: $("stopFloat"),
+  speechTestBtn: $("speechTestBtn"), followBtn: $("followBtn"), speechStopBtn: $("speechStopBtn"),
+  speechStatus: $("speechStatus"), transcript: $("transcript"),
+  upBtn: $("upBtn"), downBtn: $("downBtn"), resetBtn: $("resetBtn"), autoBtn: $("autoBtn"),
+  fontSizeDesk: $("fontSizeDesk"), opacityDesk: $("opacityDesk"), speedDesk: $("speedDesk"), handDesk: $("handDesk"),
+  fontSizeMobile: $("fontSizeMobile"), opacityMobile: $("opacityMobile"), handMobile: $("handMobile"),
+  floatControls: $("floatControls"), fullscreenBtn: $("fullscreenBtn"), sampleBtn: $("sampleBtn"),
+  diagnostics: $("diagnostics")
+};
 
-  const sampleText = `Здравейте и благодаря за поканата.
+let stream = null, recorder = null, chunks = [];
+let offset = 0, autoTimer = null;
+let speech = null, speechMode = "off", speechRunning = false, restartTimer = null;
+let finalSpeech = "", lastMatchedWord = 0, lastMatchTime = 0;
 
-Днес ще говорим за една важна тема и за начина, по който човек може да подреди информацията около себе си, когато има много въпроси и много различни мнения. За мен най-важното е разговорът да бъде спокоен, ясен и човешки.
+const SAMPLE = `Здравейте и благодаря за поканата.
 
-Когато подготвям подобно интервю, се старая първо да разбера какво искам да кажа, а след това да го подредя в кратки и разбираеми изречения. Така по време на разговора мога да следвам основната идея, без да се притеснявам, че ще пропусна нещо важно.
+Днес ще говорим за една тема, която засяга много хора, и ще се опитаме да я разгледаме спокойно, ясно и разбираемо. Когато човек се сблъска с много информация, често е трудно да разбере кое е важно, кое е актуално и кое може да му бъде полезно на практика. Затова според мен първата стъпка е да подредим въпросите и да търсим отговорите един по един.
 
-Понякога една тема изглежда много сложна, защото съдържа много подробности. Ако обаче я разделим на няколко основни въпроса, става много по-лесно да се обясни. Първо казваме какъв е проблемът, след това какво знаем до момента, какви са възможните решения и накрая какво можем да направим на практика.
+Когато подготвям интервю, не се опитвам да запомня всяка дума. Подреждам основните идеи, оставям достатъчно място за естествен разговор и използвам кратки изречения, които мога да следвам спокойно. Така вниманието остава върху човека срещу мен, а не върху опита да си спомня следващото изречение.
 
-За мен е важно информацията да идва от надеждни източници и да бъде представена на разбираем език. Това не означава да пропускаме важните детайли. Означава да ги обясним така, че човекът отсреща да може да ги използва, когато взема собствено решение.
+Понякога една тема изглежда сложна, защото съдържа много подробности. Ако обаче разделим разговора на няколко основни части, всичко става по-лесно. Първо обясняваме какъв е въпросът. След това казваме какво знаем до момента. После разглеждаме различните възможности и накрая стигаме до практичните неща, които човек може да направи.
 
-В ежедневието често се налага да променяме плановете си. Затова не трябва да очакваме всичко да бъде идеално. По-важно е да имаме посока, да правим малки стъпки и да продължаваме напред. Понякога именно малките промени дават най-добрия резултат, защото могат да се превърнат в устойчив навик.
+За мен е важно информацията да идва от надеждни източници. Това е особено важно, когато става дума за здраве, лечение, научни изследвания или решения, които могат да имат значение за ежедневието. Проверената информация не означава, че всички хора трябва да направят едно и също. Тя означава, че човек има по-добра основа, върху която да разговаря със специалисти и да взема собствените си решения.
 
-Ако говорим за движение, например, не е необходимо всеки човек да започва с дълга тренировка. Може да се започне с кратка разходка, няколко упражнения вкъщи или с движение, съобразено с индивидуалните възможности. Важното е активността да бъде подходяща и да се превърне в част от ежедневието.
+В ежедневието често се случва плановете ни да се променят. Понякога имаме повече енергия, понякога по-малко. Понякога можем да направим много, а друг път е необходимо да забавим темпото. Затова не смятам, че има смисъл да се стремим към идеален ден. По-полезно е да намерим ритъм, който можем да поддържаме.
 
-Същото важи и за почивката, съня, храненето и организацията на деня. Когато тези неща са подредени, човек по-лесно забелязва какво му помага и какво го натоварва. Това позволява постепенно да направи по-информирани промени.
+Движението е добър пример. Не е необходимо човек да започва с дълга тренировка или с голяма промяна. Може да започне с няколко минути движение, с кратка разходка, с упражнения вкъщи или с активност, съобразена с индивидуалните възможности. Важното е да има постоянство и да се избира подходящо натоварване.
 
-В края на един такъв разговор бих казал следното: не е необходимо да знаем всички отговори още днес. Достатъчно е да имаме правилните въпроси, да проверяваме информацията и да търсим решения стъпка по стъпка.
+Същото важи и за почивката. Добрата организация на деня не означава да запълним всяка минута. Напротив, трябва да оставим време за възстановяване, за сън и за нещата, които ни помагат да се чувстваме по-спокойни. Когато човек започне да наблюдава собственото си ежедневие, постепенно може да разбере кои навици му помагат и кои го натоварват.
 
-Благодаря ви, че отделихте време за този разговор. Надявам се той да бъде полезен, разбираем и практичен. Нека продължим спокойно, с ясна информация и с увереността, че всяка малка крачка напред има значение.`;
+Храненето също често се превръща в тема с много противоречиви съвети. Затова предпочитам да се придържам към доказана информация и да избягвам крайни обещания. Една промяна има по-голям шанс да остане част от ежедневието, ако е реалистична, постепенно въведена и съобразена с конкретния човек.
 
-  function log(msg) {
-    const time = new Date().toLocaleTimeString("bg-BG");
-    diagnostics.textContent = `[${time}] ${msg}`;
+Има значение и начинът, по който говорим за трудностите. Когато човек има проблем, не винаги има нужда някой веднага да му каже какво да направи. Понякога първо е необходимо да бъде чут. След това можем да обсъдим какви са възможностите, какви са ограниченията и кои следващи стъпки са реалистични.
+
+Точно затова вярвам, че добрият разговор трябва да оставя място за въпроси. Ако не разбираме нещо, трябва да можем да го попитаме отново. Ако информацията е противоречива, трябва да можем да проверим източника. Ако даден съвет не е подходящ за конкретния човек, трябва да има възможност да се обсъдят алтернативи.
+
+Когато говорим за медицински теми, особено важно е да правим разлика между информация и лична медицинска препоръка. Общата информация може да помогне на човек да разбере темата, но конкретното решение трябва да бъде обсъдено със съответния медицински специалист. Това е начинът информацията да бъде полезна, без да създава фалшива сигурност.
+
+В един интервю разговор е важно също да не бързаме. Ако говорим твърде бързо, можем да пропуснем важна дума или да направим изречението трудно за следене. Затова autocue инструментът трябва да помага, а не да пречи. Текстът трябва да се движи плавно, а контролите да бъдат достъпни, когато човек държи телефона с една ръка.
+
+Ако използваме гласово следене, идеята е проста: човекът чете текста, браузърът разпознава казаното на български и инструментът намира приблизително същите думи в сценария. Когато намери достатъчно добро съвпадение, текстът се премества напред. Ако някоя дума бъде пропусната или разпозната малко по-различно, инструментът не трябва веднага да се връща назад.
+
+Затова при подготовката на интервю е полезно изреченията да бъдат естествени. Кратките изречения, нормалната пунктуация и ясният език помагат както на човека, който чете, така и на системата за разпознаване на реч.
+
+В края на един такъв разговор бих казал, че не е необходимо да знаем всички отговори още днес. По-важно е да задаваме правилните въпроси, да проверяваме информацията и да правим следващата разумна стъпка. Понякога тази стъпка е разговор със специалист. Друг път е промяна в ежедневието, повече движение, повече почивка или просто по-добра организация.
+
+Надявам се този разговор да бъде полезен и практичен. Благодаря ви, че отделихте време да го чуете. Нека продължим с ясна информация, спокойствие и внимание към това, което наистина има значение.`;
+
+function log(message) {
+  const t = new Date().toLocaleTimeString("bg-BG");
+  els.diagnostics.textContent = `[${t}] ${message}`;
+}
+
+function normalize(s) {
+  return (s || "").toLocaleLowerCase("bg-BG")
+    .replace(/ё/g,"е")
+    .replace(/[^a-zа-я0-9\s]/gi," ")
+    .replace(/\s+/g," ").trim();
+}
+function tokenize(s){ return normalize(s).split(" ").filter(Boolean); }
+
+function syncSettings(from) {
+  const size = from === "mobile" ? els.fontSizeMobile.value : els.fontSizeDesk.value;
+  const opacity = from === "mobile" ? els.opacityMobile.value : els.opacityDesk.value;
+  const speed = els.speedDesk.value;
+  if(from === "mobile"){
+    els.fontSizeDesk.value=size; els.opacityDesk.value=opacity;
+  }else{
+    els.fontSizeMobile.value=size; els.opacityMobile.value=opacity;
   }
+  render();
+}
+function syncHand(value) {
+  const side = value || "left";
+  els.handDesk.value=side; els.handMobile.value=side; els.floatControls.dataset.side=side;
+  log(`Контролите за превъртане са преместени ${side==="left"?"вляво":"вдясно"}.`);
+}
 
-  function normalize(s) {
-    return (s || "")
-      .toLowerCase()
-      .replace(/ё/g, "е")
-      .replace(/[^a-zа-я0-9\s]/gi, " ")
-      .replace(/\s+/g, " ")
-      .trim();
+function render() {
+  const text = els.script.value || "Постави текста си тук…";
+  els.cueText.textContent=text;
+  els.cueText.style.fontSize=els.fontSizeDesk.value+"px";
+  els.cueText.style.opacity=Number(els.opacityDesk.value)/100;
+  els.cueText.style.transform=`translateY(${offset}px)`;
+}
+
+function getMaxOffset(){
+  return Math.max(0, els.cueText.scrollHeight - els.viewport.clientHeight + 80);
+}
+function moveBy(px){
+  const max=getMaxOffset();
+  offset=Math.max(-max,Math.min(80,offset+px));
+  render();
+}
+function resetCue(){ offset=0; lastMatchedWord=0; render(); }
+
+function startAuto(){
+  stopAuto();
+  autoTimer=setInterval(()=>moveBy(-(0.45+Number(els.speedDesk.value)*0.22)),35);
+  els.autoBtn.textContent="⏸ Пауза";
+}
+function stopAuto(){
+  if(autoTimer)clearInterval(autoTimer);
+  autoTimer=null; els.autoBtn.textContent="▶ Авто";
+}
+
+async function startCamera(){
+  if(!navigator.mediaDevices?.getUserMedia){
+    els.cameraStatus.textContent="Няма API";
+    log("Камерата изисква HTTPS/localhost и актуален браузър.");
+    return;
   }
-
-  function words(s) {
-    return normalize(s).split(" ").filter(Boolean);
+  els.cameraBtn.disabled=true;
+  els.cameraStatus.textContent="Стартира…";
+  try{
+    let s;
+    try{
+      s=await navigator.mediaDevices.getUserMedia({
+        video:{facingMode:{ideal:"user"},width:{ideal:1280},height:{ideal:720}},audio:true
+      });
+      log("Камера + микрофон са разрешени.");
+    }catch(e){
+      log(`Камера+микрофон: ${e.name}. Пробвам камера самостоятелно…`);
+      s=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"user"}},audio:false});
+      log("Камерата работи без микрофон.");
+    }
+    stream=s; els.preview.srcObject=s; els.preview.muted=true;
+    await els.preview.play();
+    const hasAudio=s.getAudioTracks().length>0;
+    els.cameraStatus.textContent=hasAudio?"Камера + звук":"Само камера";
+    els.cameraBtn.textContent="✓ Камерата работи";
+    els.recordBtn.disabled=!window.MediaRecorder;
+    els.recordFloat.disabled=!window.MediaRecorder;
+    log(hasAudio?"Камерата и микрофонът са готови за запис.":"Камерата е готова; записът ще бъде без звук.");
+  }catch(e){
+    els.cameraBtn.disabled=false; els.cameraStatus.textContent="Грешка";
+    let m=e.name||"UnknownError";
+    if(e.name==="NotAllowedError")m+=" — разреши камерата и микрофона за този сайт.";
+    if(e.name==="NotFoundError")m+=" — не е намерена камера.";
+    if(e.name==="NotReadableError")m+=" — камерата се използва от друга програма.";
+    if(e.name==="SecurityError")m+=" — използвай HTTPS.";
+    log("Камерата не стартира: "+m);
   }
+}
 
-  function renderCue() {
-    const raw = scriptEl.value || "Постави текста си тук…";
-    cueText.innerHTML = "";
-    const parts = raw.split(/(\s+)/);
-    let wordNo = 0;
-    for (const part of parts) {
-      if (/\s+/.test(part)) {
-        cueText.appendChild(document.createTextNode(part));
-      } else if (part) {
-        const span = document.createElement("span");
-        span.className = "cue-word";
-        span.dataset.word = String(wordNo++);
-        span.textContent = part;
-        cueText.appendChild(span);
+function mime(){
+  const types=["video/webm;codecs=vp9,opus","video/webm;codecs=vp8,opus","video/webm","video/mp4"];
+  return types.find(t=>window.MediaRecorder?.isTypeSupported(t))||"";
+}
+function updateRecordButtons(active){
+  els.recordBtn.disabled=active||!stream;
+  els.recordFloat.disabled=active||!stream;
+  els.stopRecordBtn.disabled=!active;
+  els.stopFloat.disabled=!active;
+}
+function startRecording(){
+  if(!stream||!window.MediaRecorder){log("Първо стартирай камерата.");return;}
+  chunks=[];
+  try{ recorder=new MediaRecorder(stream,mime()?{mimeType:mime()}:undefined); }
+  catch(e){log("Записът не може да започне: "+e.message);return;}
+  recorder.ondataavailable=e=>{if(e.data?.size)chunks.push(e.data)};
+  recorder.onstop=saveRecording;
+  recorder.onerror=e=>log("Грешка при записа.");
+  recorder.start(250);
+  updateRecordButtons(true);
+  els.recordStatus.textContent="● Записва…";
+  els.recordFloat.textContent="⏸ Пауза";
+  log("Видео записът започна.");
+}
+function toggleRecording(){
+  if(!recorder||recorder.state==="inactive"){startRecording();return;}
+  if(recorder.state==="recording"){
+    recorder.pause(); els.recordStatus.textContent="Ⅱ Пауза"; els.recordFloat.textContent="▶ Продължи";
+    log("Видео записът е на пауза.");
+  }else if(recorder.state==="paused"){
+    recorder.resume(); els.recordStatus.textContent="● Записва…"; els.recordFloat.textContent="⏸ Пауза";
+    log("Видео записът продължи.");
+  }
+}
+function stopRecording(){
+  if(recorder&&recorder.state!=="inactive"){recorder.stop();els.recordStatus.textContent="Обработва…";log("Видео записът е спрян.");}
+}
+function saveRecording(){
+  if(!chunks.length){els.recordStatus.textContent="Няма данни";updateRecordButtons(false);return;}
+  const type=recorder.mimeType||"video/webm";
+  const blob=new Blob(chunks,{type});
+  const url=URL.createObjectURL(blob);
+  const ext=type.includes("mp4")?"mp4":"webm";
+  const a=document.createElement("a");
+  a.href=url;a.download=`bg-autocue-${Date.now()}.${ext}`;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1500);
+  els.recordStatus.textContent="✓ Записът е готов";
+  els.recordFloat.textContent="⏺ Запис";
+  updateRecordButtons(false);
+  log("Файлът с видеото е създаден и изтеглянето е стартирано.");
+}
+
+function speechSupported(){return !!(window.SpeechRecognition||window.webkitSpeechRecognition);}
+function newSpeech(){
+  const C=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!C)return null;
+  const r=new C();
+  r.lang="bg-BG";r.continuous=true;r.interimResults=true;r.maxAlternatives=3;
+  return r;
+}
+function lev(a,b){
+  const dp=new Array(b.length+1);
+  for(let j=0;j<=b.length;j++)dp[j]=j;
+  for(let i=1;i<=a.length;i++){
+    let prev=dp[0];dp[0]=i;
+    for(let j=1;j<=b.length;j++){
+      const temp=dp[j];
+      dp[j]=Math.min(dp[j]+1,dp[j-1]+1,prev+(a[i-1]===b[j-1]?0:1));
+      prev=temp;
+    }
+  }
+  return dp[b.length];
+}
+function sim(a,b){
+  if(a===b)return 1;
+  if(!a||!b)return 0;
+  if(a.startsWith(b)||b.startsWith(a))return Math.min(a.length,b.length)/Math.max(a.length,b.length);
+  if(a.length>=5&&b.length>=5){
+    const d=lev(a,b), m=Math.max(a.length,b.length);
+    return 1-d/m;
+  }
+  return 0;
+}
+function findMatch(spoken){
+  const sw=tokenize(els.script.value), tw=tokenize(spoken);
+  if(!sw.length||!tw.length)return -1;
+  const recent=tw.slice(-10);
+  const start=Math.max(0,lastMatchedWord-2);
+  const end=Math.min(sw.length,lastMatchedWord+140);
+  let best={score:0,index:-1,hits:0};
+
+  // Strong phrase matching, allowing small recognition differences.
+  for(let n=Math.min(8,recent.length);n>=2;n--){
+    const phrase=recent.slice(-n);
+    for(let i=start;i<=end-n;i++){
+      let total=0,hits=0;
+      for(let j=0;j<n;j++){
+        const s=sim(sw[i+j],phrase[j]);
+        if(s>=0.68){total+=s;hits++;}
       }
+      const score=hits/n + (hits===n?0.35:0);
+      if(hits>=Math.max(2,Math.ceil(n*0.6))&&score>best.score)
+        best={score,index:i+n,hits};
     }
-    cueText.style.fontSize = `${fontSize.value}px`;
-    cueText.style.opacity = Number(cueOpacity.value) / 100;
-    cueText.style.transform = `translateY(${offset}px)`;
   }
+  if(best.index>=0)return best.index;
 
-  function syncHandSide(side) {
-    const value = side || handSide.value || handSideDesk.value || "left";
-    mobileControls.dataset.side = value;
-    handSide.value = value;
-    handSideDesk.value = value;
-  }
-
-  function moveBy(delta) {
-    offset += delta;
-    const max = Math.max(0, cueText.scrollHeight - cueViewport.clientHeight + 100);
-    offset = Math.max(-max, Math.min(150, offset));
-    renderCue();
-  }
-
-  function resetCue() {
-    offset = 0;
-    lastMatchedWord = 0;
-    renderCue();
-  }
-
-  function startAuto() {
-    stopAuto();
-    const tick = () => {
-      const amount = 0.35 + Number(speed.value) * 0.18;
-      moveBy(-amount);
-    };
-    autoTimer = setInterval(tick, 35);
-    autoBtn.textContent = "⏸ Пауза";
-  }
-
-  function stopAuto() {
-    if (autoTimer) clearInterval(autoTimer);
-    autoTimer = null;
-    autoBtn.textContent = "▶ Авто";
-  }
-
-  function toggleAuto() {
-    if (autoTimer) stopAuto(); else startAuto();
-  }
-
-  async function startCamera() {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      cameraStatus.textContent = "Няма API";
-      log("Този браузър не поддържа камера достъп. Използвай HTTPS (GitHub Pages) и актуален Chrome/Safari.");
-      return;
+  // Distinctive single-word fallback.
+  for(let j=recent.length-1;j>=0;j--){
+    const w=recent[j];
+    if(w.length<4)continue;
+    let localBest={s:0,i:-1};
+    for(let i=start;i<end;i++){
+      const s=sim(sw[i],w);
+      if(s>localBest.s)localBest={s,i};
     }
-
-    cameraBtn.disabled = true;
-    cameraStatus.textContent = "Стартира…";
-    log("Стартиране на камерата независимо от останалите модули…");
-
-    try {
-      try {
-        cameraStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: "user" }, width: { ideal: 1280 }, height: { ideal: 720 } },
-          audio: true
-        });
-        log("Камера + микрофон са разрешени.");
-      } catch (firstError) {
-        log(`Камера+микрофон не стартираха (${firstError.name}). Пробвам камера без аудио…`);
-        cameraStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: "user" } },
-          audio: false
-        });
-        log("Камерата работи. Микрофонът не е достъпен; записът ще бъде без звук.");
+    if(localBest.s>=0.84)return localBest.i+1;
+  }
+  return -1;
+}
+function moveToWord(idx){
+  const words=els.cueText.textContent.split(/(\s+)/);
+  let chars=0,targetIndex=-1,count=0;
+  const wanted=Math.max(0,idx-1);
+  for(const part of words){
+    if(/\s+/.test(part)){chars+=part.length;continue;}
+    if(count===wanted){targetIndex=chars;break;}
+    chars+=part.length;count++;
+  }
+  const text=els.cueText.textContent;
+  const before=text.slice(0,targetIndex<0?0:targetIndex);
+  const approxLines=(before.length/38);
+  const targetTop=approxLines*els.fontSizeDesk.value*1.45;
+  const max=getMaxOffset();
+  offset=Math.max(-max,Math.min(60,els.viewport.clientHeight*0.42-targetTop));
+  render();
+}
+function handleSpeechResult(event){
+  let display="";
+  let fresh="";
+  for(let i=0;i<event.results.length;i++){
+    const t=event.results[i][0].transcript;
+    display+=t+" ";
+    if(i>=event.resultIndex)fresh+=t+" ";
+  }
+  els.transcript.textContent=display.trim()||"—";
+  if(speechMode==="follow"){
+    // Keep a compact rolling spoken buffer and search from the current cursor.
+    if(fresh.trim()) finalSpeech=(finalSpeech+" "+fresh).slice(-900);
+    const candidate=findMatch(fresh.trim()||finalSpeech);
+    if(candidate>lastMatchedWord && Date.now()-lastMatchTime>180){
+      lastMatchedWord=candidate;lastMatchTime=Date.now();moveToWord(candidate);
+      log(`Гласово следене: намерено съвпадение около дума ${candidate}.`);
+    }
+  }
+}
+function attachSpeech(r){
+  r.onstart=()=>{speechRunning=true;els.speechStatus.textContent=speechMode==="follow"?"Следи…":"Слуша…";};
+  r.onresult=handleSpeechResult;
+  r.onerror=e=>{
+    speechRunning=false;els.speechStatus.textContent="Грешка";
+    log(`Гласово разпознаване: ${e.error}.`);
+    if(["not-allowed","service-not-allowed","language-not-supported"].includes(e.error)){speechMode="off";updateSpeechButtons();}
+  };
+  r.onend=()=>{
+    speechRunning=false;
+    if(speechMode==="off"){updateSpeechButtons();return;}
+    clearTimeout(restartTimer);
+    restartTimer=setTimeout(()=>{
+      if(speechMode!=="off"&&speech&&!speechRunning){
+        try{speech.start();}catch(_){}
       }
-
-      preview.srcObject = cameraStream;
-      preview.muted = true;
-      preview.setAttribute("playsinline", "");
-      await preview.play();
-
-      cameraStatus.textContent = cameraStream.getAudioTracks().length ? "Камера + звук" : "Само камера";
-      cameraBtn.textContent = "✓ Камерата работи";
-      recordBtn.disabled = !window.MediaRecorder;
-      log("Камерата е стартирана. Маркерът за лице е в отделния видео прозорец и не покрива текста.");
-    } catch (error) {
-      cameraBtn.disabled = false;
-      cameraStatus.textContent = "Грешка";
-      let msg = error.name || "UnknownError";
-      if (error.name === "NotAllowedError") msg += " — разреши камерата/микрофона за този сайт.";
-      else if (error.name === "NotFoundError") msg += " — не е намерена камера.";
-      else if (error.name === "NotReadableError") msg += " — камерата вероятно се използва от друга програма.";
-      else if (error.name === "SecurityError") msg += " — сайтът трябва да е HTTPS.";
-      else if (error.name === "OverconstrainedError") msg += " — неподдържани настройки; пробвай отново.";
-      log("Неуспешен старт на камерата: " + msg);
-    }
+    },500);
+  };
+}
+function updateSpeechButtons(){
+  const active=speechMode!=="off";
+  els.speechTestBtn.disabled=active;els.followBtn.disabled=active;els.speechStopBtn.disabled=!active;
+  if(!active)els.speechStatus.textContent="Готово";
+}
+function startSpeech(mode){
+  if(!speechSupported()){
+    log("Този браузър няма SpeechRecognition. Камерата и ръчният autocue работят независимо.");
+    els.speechStatus.textContent="Няма поддръжка";return;
   }
+  stopSpeech();
+  speechMode=mode;finalSpeech="";
+  if(mode==="follow"){lastMatchedWord=0;offset=0;render();}
+  speech=newSpeech();if(!speech)return;
+  attachSpeech(speech);updateSpeechButtons();
+  try{
+    speech.start();
+    log(mode==="follow"?"Гласовото следене е стартирано. Започни да четеш първото изречение от текста.":"Тестът за български е стартиран. Кажи няколко думи.");
+  }catch(e){log("Неуспешен старт на речта: "+e.message);}
+}
+function stopSpeech(){
+  speechMode="off";clearTimeout(restartTimer);
+  if(speech){try{speech.abort();}catch(_){}}
+  speech=null;speechRunning=false;updateSpeechButtons();
+}
 
-  function chooseMimeType() {
-    const types = [
-      "video/webm;codecs=vp9,opus",
-      "video/webm;codecs=vp8,opus",
-      "video/webm",
-      "video/mp4"
-    ];
-    return types.find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || "";
+function toggleFullscreen(){
+  const active=document.body.classList.toggle("fullscreen-mode");
+  els.fullscreenBtn.textContent=active?"⛶ Изход от цял екран":"⛶ Цял екран";
+  if(active && document.documentElement.requestFullscreen){
+    document.documentElement.requestFullscreen().catch(()=>{});
+  }else if(!active && document.fullscreenElement && document.exitFullscreen){
+    document.exitFullscreen().catch(()=>{});
   }
-
-  function setRecordButtons(recording) {
-    recordBtn.disabled = recording;
-    recordFloatBtn.disabled = recording;
-    stopRecordBtn.disabled = !recording;
-    stopRecordFloatBtn.disabled = !recording;
-    recordFloatBtn.textContent = recording ? "⏸ Пауза" : "⏺ Запис";
+}
+document.addEventListener("fullscreenchange",()=>{
+  if(!document.fullscreenElement && document.body.classList.contains("fullscreen-mode")){
+    // Keep CSS fullscreen mode on devices that exit native fullscreen unexpectedly.
+    els.fullscreenBtn.textContent="⛶ Изход от цял екран";
   }
+});
 
-  function startRecording() {
-    if (!cameraStream || !window.MediaRecorder) {
-      log("Няма активна камера или MediaRecorder.");
-      return;
-    }
-    recordedChunks = [];
-    const mimeType = chooseMimeType();
-    try {
-      recorder = new MediaRecorder(cameraStream, mimeType ? { mimeType } : undefined);
-    } catch (e) {
-      log("MediaRecorder не може да започне: " + e.message);
-      return;
-    }
+els.upBtn.addEventListener("click",()=>moveBy(110));
+els.downBtn.addEventListener("click",()=>moveBy(-110));
+els.resetBtn.addEventListener("click",resetCue);
+els.autoBtn.addEventListener("click",()=>autoTimer?stopAuto():startAuto());
 
-    recorder.ondataavailable = e => {
-      if (e.data && e.data.size) recordedChunks.push(e.data);
-    };
-    recorder.onstop = saveRecording;
-    recorder.start(250);
-    setRecordButtons(true);
-    recordStatus.textContent = "● Записва…";
-    log("Записът започна.");
-  }
+els.fontSizeDesk.addEventListener("input",()=>{els.fontSizeMobile.value=els.fontSizeDesk.value;render();});
+els.fontSizeMobile.addEventListener("input",()=>syncSettings("mobile"));
+els.opacityDesk.addEventListener("input",()=>{els.opacityMobile.value=els.opacityDesk.value;render();});
+els.opacityMobile.addEventListener("input",()=>syncSettings("mobile"));
+els.speedDesk.addEventListener("input",()=>{});
+els.handDesk.addEventListener("change",()=>syncHand(els.handDesk.value));
+els.handMobile.addEventListener("change",()=>syncHand(els.handMobile.value));
 
-  function toggleRecording() {
-    if (!recorder || recorder.state === "inactive") {
-      startRecording();
-      return;
-    }
-    if (recorder.state === "recording") {
-      recorder.pause();
-      recordStatus.textContent = "Ⅱ Пауза";
-      recordFloatBtn.textContent = "▶ Продължи";
-      log("Записът е на пауза.");
-    } else if (recorder.state === "paused") {
-      recorder.resume();
-      recordStatus.textContent = "● Записва…";
-      recordFloatBtn.textContent = "⏸ Пауза";
-      log("Записът продължи.");
-    }
-  }
+els.script.addEventListener("input",()=>resetCue());
+els.sampleBtn.addEventListener("click",()=>{els.script.value=SAMPLE;resetCue();log("Дългият примерен текст е зареден.");});
+els.cameraBtn.addEventListener("click",startCamera);
+els.recordBtn.addEventListener("click",startRecording);
+els.stopRecordBtn.addEventListener("click",stopRecording);
+els.recordFloat.addEventListener("click",toggleRecording);
+els.stopFloat.addEventListener("click",stopRecording);
+els.speechTestBtn.addEventListener("click",()=>startSpeech("test"));
+els.followBtn.addEventListener("click",()=>startSpeech("follow"));
+els.speechStopBtn.addEventListener("click",stopSpeech);
+els.fullscreenBtn.addEventListener("click",toggleFullscreen);
 
-  function stopRecording() {
-    if (recorder && recorder.state !== "inactive") {
-      recorder.stop();
-      recordStatus.textContent = "Обработва…";
-    }
-  }
+window.addEventListener("beforeunload",()=>{
+  stopSpeech();stopAuto();
+  if(stream)stream.getTracks().forEach(t=>t.stop());
+});
 
-  function saveRecording() {
-    if (!recordedChunks.length) {
-      recordStatus.textContent = "Няма данни";
-      return;
-    }
-    const type = recorder.mimeType || "video/webm";
-    const blob = new Blob(recordedChunks, { type });
-    const ext = type.includes("mp4") ? "mp4" : "webm";
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `bg-autocue-${new Date().toISOString().replace(/[:.]/g, "-")}.${ext}`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-    recordStatus.textContent = "Записът е готов";
-    setRecordButtons(false);
-    log("Записът е записан локално като файл.");
-  }
-
-  function browserSpeechSupported() {
-    return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
-  }
-
-  function makeSpeech() {
-    const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!Ctor) return null;
-    const r = new Ctor();
-    r.lang = "bg-BG";
-    r.continuous = true;
-    r.interimResults = true;
-    r.maxAlternatives = 3;
-    return r;
-  }
-
-  function tokenSimilarity(a, b) {
-    if (a === b) return 1;
-    if (!a || !b) return 0;
-    if (a.startsWith(b) || b.startsWith(a)) return Math.min(a.length,b.length) / Math.max(a.length,b.length);
-    return 0;
-  }
-
-  function phraseScore(scriptTokens, spokenTokens, pos) {
-    const n = spokenTokens.length;
-    let score = 0, hits = 0;
-    for (let j = 0; j < n && pos + j < scriptTokens.length; j++) {
-      const sim = tokenSimilarity(scriptTokens[pos+j], spokenTokens[j]);
-      if (sim >= 0.72) { score += sim; hits++; }
-    }
-    return { score: hits ? score / n : 0, hits };
-  }
-
-  function findScriptMatch(spoken) {
-    const sw = words(scriptEl.value);
-    const tw = words(spoken);
-    if (!sw.length || !tw.length) return -1;
-    const recent = tw.slice(-8);
-    const start = Math.max(0, lastMatchedWord - 8);
-    const end = Math.min(sw.length, lastMatchedWord + 90);
-    let best = { score: 0, index: -1, hits: 0 };
-
-    for (let n = Math.min(8, recent.length); n >= 2; n--) {
-      const phrase = recent.slice(-n);
-      for (let i = start; i <= end - n; i++) {
-        const s = phraseScore(sw, phrase, i);
-        if (s.hits >= Math.max(2, Math.ceil(n * 0.6))) {
-          const weighted = s.score + n * 0.045;
-          if (weighted > best.score) best = { score: weighted, index: i + n, hits: s.hits };
-        }
-      }
-    }
-
-    // If a phrase is not available, use a distinctive recent word ahead of the cursor.
-    if (best.index < 0) {
-      for (let j = recent.length - 1; j >= 0; j--) {
-        const w = recent[j];
-        if (w.length < 4) continue;
-        for (let i = start; i < end; i++) {
-          if (sw[i] === w) return i + 1;
-        }
-      }
-    }
-    return best.index;
-  }
-
-  function moveCueToWord(wordIndex) {
-    const target = cueText.querySelector(`.cue-word[data-word="${Math.max(0, wordIndex - 1)}"]`);
-    if (target) {
-      const targetTop = target.offsetTop;
-      const guideY = cueViewport.clientHeight * 0.42;
-      const max = Math.max(0, cueText.scrollHeight - cueViewport.clientHeight + 100);
-      offset = Math.max(-max, Math.min(150, guideY - targetTop));
-    } else {
-      const total = words(scriptEl.value).length;
-      const ratio = total ? wordIndex / total : 0;
-      const max = Math.max(0, cueText.scrollHeight - cueViewport.clientHeight + 100);
-      offset = -ratio * max;
-    }
-    renderCue();
-  }
-
-  function attachSpeechHandlers(r) {
-    r.onstart = () => {
-      speechBusy = true;
-      speechStatus.textContent = speechMode === "follow" ? "Следи…" : "Слуша…";
-      log("Българското гласово разпознаване е стартирано (bg-BG).");
-    };
-
-    r.onresult = event => {
-      let display = "";
-      let newSpeech = "";
-      for (let i = 0; i < event.results.length; i++) {
-        const text = event.results[i][0].transcript;
-        display += text + " ";
-        if (i >= event.resultIndex) newSpeech += text + " ";
-      }
-      transcriptEl.textContent = display.trim() || "—";
-
-      if (speechMode === "follow") {
-        const idx = findScriptMatch(newSpeech || display);
-        if (idx > lastMatchedWord) {
-          lastMatchedWord = idx;
-          moveCueToWord(idx);
-          log(`Гласово следене: намерено съвпадение около дума ${idx}.`);
-        }
-      }
-    };
-
-    r.onerror = event => {
-      speechBusy = false;
-      speechStatus.textContent = "Грешка";
-      log(`Гласово разпознаване: ${event.error}.`);
-      if (["not-allowed", "service-not-allowed", "language-not-supported"].includes(event.error)) {
-        speechMode = "off";
-      }
-    };
-
-    r.onend = () => {
-      speechBusy = false;
-      if (speechMode === "off") {
-        speechStopBtn.disabled = true;
-        followBtn.disabled = false;
-        speechTestBtn.disabled = false;
-        speechStatus.textContent = "Готово";
-        return;
-      }
-      clearTimeout(speechRestartTimer);
-      speechRestartTimer = setTimeout(() => {
-        if (speechMode !== "off" && speech && !speechBusy) {
-          try { speech.start(); } catch (_) {}
-        }
-      }, 450);
-    };
-  }
-
-  function startSpeech(mode) {
-    if (!browserSpeechSupported()) {
-      speechStatus.textContent = "Няма поддръжка";
-      log("Този браузър не предлага SpeechRecognition. Камерата и ръчният autocue остават независими.");
-      return;
-    }
-
-    stopSpeech();
-    speechMode = mode;
-    speech = makeSpeech();
-    if (!speech) return;
-    attachSpeechHandlers(speech);
-    speechTestBtn.disabled = true;
-    followBtn.disabled = true;
-    speechStopBtn.disabled = false;
-    if (mode === "follow") {
-      lastMatchedWord = 0;
-      offset = 0;
-      renderCue();
-    }
-    try {
-      speech.start();
-      log(mode === "follow" ? "Гласово следене е включено. Кажи първите думи от текста." : "Тестът за български глас е включен.");
-    } catch (e) {
-      log("Неуспешен старт на гласовото разпознаване: " + e.message);
-    }
-  }
-
-  function stopSpeech() {
-    speechMode = "off";
-    clearTimeout(speechRestartTimer);
-    if (speech) {
-      try { speech.abort(); } catch (_) { try { speech.stop(); } catch (_) {} }
-    }
-    speech = null;
-    speechBusy = false;
-    speechStopBtn.disabled = true;
-    speechTestBtn.disabled = false;
-    followBtn.disabled = false;
-    speechStatus.textContent = "Готово";
-  }
-
-  upBtn.addEventListener("click", () => moveBy(100));
-  downBtn.addEventListener("click", () => moveBy(-100));
-  resetBtn.addEventListener("click", resetCue);
-  autoBtn.addEventListener("click", toggleAuto);
-  fontSize.addEventListener("input", () => { fontSizeDesk.value = fontSize.value; renderCue(); });
-  speed.addEventListener("input", () => { speedDesk.value = speed.value; });
-  cueOpacity.addEventListener("input", () => { cueOpacityDesk.value = cueOpacity.value; renderCue(); });
-  fontSizeDesk.addEventListener("input", () => { fontSize.value = fontSizeDesk.value; renderCue(); });
-  speedDesk.addEventListener("input", () => { speed.value = speedDesk.value; });
-  cueOpacityDesk.addEventListener("input", () => { cueOpacity.value = cueOpacityDesk.value; renderCue(); });
-  scriptEl.addEventListener("input", () => { resetCue(); });
-  cameraBtn.addEventListener("click", startCamera);
-  recordBtn.addEventListener("click", startRecording);
-  stopRecordBtn.addEventListener("click", stopRecording);
-  recordFloatBtn.addEventListener("click", toggleRecording);
-  stopRecordFloatBtn.addEventListener("click", stopRecording);
-  handSide.addEventListener("change", () => syncHandSide(handSide.value));
-  handSideDesk.addEventListener("change", () => syncHandSide(handSideDesk.value));
-  speechTestBtn.addEventListener("click", () => startSpeech("test"));
-  followBtn.addEventListener("click", () => startSpeech("follow"));
-  speechStopBtn.addEventListener("click", stopSpeech);
-  sampleBtn.addEventListener("click", () => { scriptEl.value = sampleText; resetCue(); });
-
-  fullscreenBtn.addEventListener("click", async () => {
-    try {
-      if (!document.fullscreenElement) await document.querySelector(".record-layout").requestFullscreen();
-      else await document.exitFullscreen();
-    } catch (e) {
-      log("Целият екран не е разрешен от браузъра.");
-    }
-  });
-
-  window.addEventListener("beforeunload", () => {
-    stopSpeech();
-    stopAuto();
-    if (cameraStream) cameraStream.getTracks().forEach(t => t.stop());
-  });
-
-  if (!browserSpeechSupported()) {
-    speechStatus.textContent = "Провери браузъра";
-    log("SpeechRecognition не е наличен в този браузър. За български гласов autocue пробвай Chrome на Android/desktop.");
-  } else {
-    log("Гласовият модул е наличен. Камерата не зависи от него.");
-  }
-
-  syncHandSide("left");
-  fontSizeDesk.value = fontSize.value;
-  speedDesk.value = speed.value;
-  cueOpacityDesk.value = cueOpacity.value;
-  renderCue();
+els.fontSizeMobile.value=els.fontSizeDesk.value;
+els.opacityMobile.value=els.opacityDesk.value;
+els.handMobile.value=els.handDesk.value;
+syncHand("left");
+render();
+if(!speechSupported())log("SpeechRecognition не е наличен. Пробвай актуален Chrome; останалите функции са независими.");
 })();
