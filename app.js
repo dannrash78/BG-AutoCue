@@ -20,7 +20,7 @@ const els = {
 let stream = null, recorder = null, chunks = [];
 let offset = 0, autoTimer = null;
 let speech = null, speechMode = "off", speechRunning = false, restartTimer = null;
-let finalSpeech = "", lastMatchedWord = 0, speechProgressWord = 0, speechMatchedHistory = "", speechRecognizedCount = 0, speechFinalProcessed = new Set(), speechFinalSignatures = new Set(), lastMatchTime = 0, highlightedWord = -1, animationFrame = null, speechResultCursor = 0;
+let finalSpeech = "", lastMatchedWord = 0, speechProgressWord = 0, speechMatchedHistory = "", lastMatchTime = 0, highlightedWord = -1, animationFrame = null, speechResultCursor = 0;
 
 const SAMPLE = `Здравейте и благодаря за поканата.
 
@@ -144,10 +144,10 @@ function getMaxOffset(){
 function moveBy(px){
   const max=getMaxOffset();
   offset=Math.max(-max,Math.min(80,offset+px));
-  els.cueText.style.transform=`translateY(${offset}px)`;
+  render();
 }
 function resetCue(){
-  offset=0; lastMatchedWord=0; speechProgressWord=0; speechMatchedHistory=""; finalSpeech=""; highlightedWord=-1; speechResultCursor=""; speechFinalSignatures=new Set(); speechRecognizedCount=0;
+  offset=0; lastMatchedWord=0; speechProgressWord=0; speechMatchedHistory=""; finalSpeech=""; highlightedWord=-1;
   if(animationFrame) cancelAnimationFrame(animationFrame);
   animationFrame=null;
   render();
@@ -294,146 +294,132 @@ function sim(a,b){
   }
   return 0;
 }
-function wordMatchScore(scriptWord, spokenWord){
-  if(!scriptWord || !spokenWord)return 0;
-  if(scriptWord===spokenWord)return 1;
-  if(scriptWord.length<=3 || spokenWord.length<=3)return 0;
-
-  const s=sim(scriptWord,spokenWord);
-  if(scriptWord.length===4 || spokenWord.length===4)
-    return s>=0.90?s:0;
-  return s>=0.68?s:0;
-}
-
 function findMatch(spoken){
   const sw=tokenize(els.script.value);
-  const tw=tokenize(spoken).slice(-14);
-  if(!sw.length||!tw.length)return {index:-1,score:0,count:0,matches:[]};
+  const tw=tokenize(spoken);
+  if(!sw.length||!tw.length)return {index:-1,score:0,count:0};
 
-  const base=Math.max(0,Math.min(speechProgressWord,sw.length-1));
+  // IMPORTANT: never search the whole script. The speech cursor is a
+  // one-way pointer. A recognition error can move it only forward, and only
+  // inside the next 10 script words. This prevents common words such as
+  // "и", "на", "за" from causing a jump to a later paragraph.
+  const base=Math.max(0,speechProgressWord);
   const limit=Math.min(sw.length,base+10);
-  const stop=new Set([
-    "и","а","в","във","на","за","с","със","от","до","по","при","че","да",
-    "се","си","е","са","ще","не","но","като","която","който","кои","това",
-    "тези","този","тази","то","го","ги","му","ми","ме","ви","те","аз","ти",
-    "ние","вие","той","тя","как","какво","към","или","ако","след","преди","още","само"
-  ]);
+  const spokenWords=tw.slice(-18);
 
-  // Word-by-word forward tracking is deliberately used instead of rigid phrase
-  // matching. SpeechRecognition often returns a mostly-correct sentence with a
-  // few substitutions or omissions. Each recognized word gets one chance to
-  // find the earliest compatible script word within the next 10 words.
-  let cursor=base;
-  const matches=[];
-
-  for(const spokenWord of tw){
-    if(cursor>=limit)break;
-    if(stop.has(spokenWord) && spokenWord.length<=3){
-      // A short grammatical word may help continuity only when it is the next
-      // or immediately following script word. Never let it jump across text.
-      const exact=sw[cursor]===spokenWord ? cursor : (sw[cursor+1]===spokenWord ? cursor+1 : -1);
-      if(exact>=0){
-        matches.push({scriptIndex:exact,score:1,spokenWord});
-        cursor=exact+1;
+  // First try to align a short consecutive phrase against the next 10 words.
+  // Prefer the EARLIEST valid alignment, not the highest-scoring distant one.
+  // That is the key difference from the previous version.
+  let best={index:-1,score:0,count:0,start:-1};
+  const maxN=Math.min(8,spokenWords.length);
+  for(let n=maxN;n>=2;n--){
+    const phrase=spokenWords.slice(-n);
+    for(let i=base;i<=Math.min(limit-n,base+9);i++){
+      let total=0,hits=0;
+      for(let j=0;j<n;j++){
+        const q=sim(sw[i+j],phrase[j]);
+        if(q>=0.58){hits++;total+=q;}
       }
-      continue;
-    }
-
-    let chosen=-1, chosenScore=0;
-    for(let i=cursor;i<limit;i++){
-      const score=wordMatchScore(sw[i],spokenWord);
-      if(score>0){
-        chosen=i;chosenScore=score;
-        break; // earliest valid match: never jump farther for a nicer score
+      const coverage=hits/n;
+      const score=(total/Math.max(1,n))*0.75+coverage*0.25;
+      if(hits>=Math.max(2,Math.ceil(n*0.60)) && score>=0.64){
+        best={index:i+n,score,count:n,start:i};
+        // Earliest valid phrase wins. Do not keep searching farther down.
+        break;
       }
     }
+    if(best.index>=0)break;
+  }
+  if(best.index>=0)return best;
 
-    if(chosen>=0){
-      matches.push({scriptIndex:chosen,score:chosenScore,spokenWord});
-      cursor=chosen+1;
+  // Single-word fallback, but only for useful/content words. Search at most
+  // 10 words ahead and take the first sufficiently strong match.
+  const stop=new Set(['и','а','в','във','на','за','с','със','от','до','по','при','че','да','се','си','е','са','ще','не','но','като','която','който','кои','това','тези','този','тази','то','го','ги','му','ми','ме','ви','те','аз','ти','ние','вие','той','тя','те','как','какво','към','или','ако','след','преди','още','само']);
+  for(const w of spokenWords.slice(-5).reverse()){
+    if(stop.has(w)||w.length<4)continue;
+    for(let i=base;i<limit;i++){
+      const q=sim(sw[i],w);
+      if(q>=0.82)return {index:i+1,score:q,count:1,start:i};
     }
   }
 
-  if(!matches.length)return {index:-1,score:0,count:0,matches:[]};
-
-  const strong=matches.filter(m=>m.score>=0.82);
-  const average=matches.reduce((sum,m)=>sum+m.score,0)/matches.length;
-  const last=matches[matches.length-1];
-
-  // At least one strong content-word match is enough to move. Multiple weaker
-  // matches also count when they form a forward chain.
-  if(strong.length<1 && matches.length<2)
-    return {index:-1,score:average,count:matches.length,matches};
-
-  const confidence=Math.min(1,Math.max(0.50,average));
-  return {
-    index:Math.min(sw.length-1,last.scriptIndex+1),
-    score:confidence,
-    count:matches.length,
-    matches
-  };
+  return best;
 }
 function getWordElement(index){
-  if(!els.cueText)return null;
   return els.cueText.querySelector(`.cue-word[data-word-index="${index}"]`);
 }
 
-function moveToWord(idx,matchedWordCount=0,matchConfidence=0){
-  const total=tokenize(els.script.value).length;
-  if(!total || !els.viewport || !els.cueText)return;
+function scrollWordToGuide(index, smooth=true){
+  const target=getWordElement(index);
+  if(!target)return false;
 
-  const nextIndex=Math.max(0,Math.min(total-1,idx));
-  highlightedWord=nextIndex;
-  render();
+  const vr=els.viewport.getBoundingClientRect();
+  const tr=target.getBoundingClientRect();
+  const guideY=vr.top+vr.height*0.50;
+  const wordCenter=tr.top+tr.height*0.50;
+  const delta=guideY-wordCenter;
 
-  const target=getWordElement(nextIndex);
-  if(!target)return;
-
-  const viewportRect=els.viewport.getBoundingClientRect();
-  const targetRect=target.getBoundingClientRect();
-  const guideY=viewportRect.top+viewportRect.height*0.50;
-  const targetY=targetRect.top+targetRect.height*0.50;
-  let delta=guideY-targetY;
-
-  // Once the next word drops below the guide, bring it back to the guide.
-  // A tiny dead-zone prevents jitter while staying on the same text line.
-  if(targetRect.top > viewportRect.top+viewportRect.height*0.60){
-    delta=guideY-targetY;
-  }else if(targetRect.bottom < viewportRect.top+viewportRect.height*0.34){
-    delta=guideY-targetY;
-  }else if(Math.abs(delta)<8){
-    return;
-  }
-
-  const max=Math.max(0,els.cueText.offsetHeight-els.viewport.clientHeight+els.viewport.clientHeight*0.20);
-  const desired=offset+delta;
-  const targetOffset=Math.max(-max,Math.min(80,desired));
-
-  if(Math.abs(targetOffset-offset)<2){
-    offset=targetOffset;
-    els.cueText.style.transform=`translate3d(0,${offset}px,0)`;
-    return;
-  }
-
-  if(animationFrame)cancelAnimationFrame(animationFrame);
+  const max=getMaxOffset();
   const startOffset=offset;
-  const distance=targetOffset-startOffset;
-  const maxJump=Math.max(90,Math.min(360,viewportRect.height*0.65));
-  const bounded=startOffset+Math.max(-maxJump,Math.min(maxJump,distance));
-  const duration=Math.max(300,Math.min(750,280+Math.abs(bounded-startOffset)*1.15));
+  const targetOffset=Math.max(-max,Math.min(80,startOffset+delta));
+
+  if(Math.abs(targetOffset-startOffset)<0.5){
+    render();
+    return true;
+  }
+
+  if(animationFrame) cancelAnimationFrame(animationFrame);
+
+  const distance=Math.abs(targetOffset-startOffset);
+  // Longer travel gets a longer glide, so the text never appears to teleport.
+  const duration=smooth
+    ? Math.max(380,Math.min(1250,420+distance*2.2))
+    : 0;
+
+  if(!duration){
+    offset=targetOffset;
+    render();
+    return true;
+  }
+
   const started=performance.now();
-  const ease=t=>t<0.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
+  const ease=t=>t<0.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2;
 
   const animate=now=>{
     const p=Math.min(1,(now-started)/duration);
-    offset=startOffset+(bounded-startOffset)*ease(p);
-    els.cueText.style.transform=`translate3d(0,${offset}px,0)`;
-    if(p<1)animationFrame=requestAnimationFrame(animate);
+    offset=startOffset+(targetOffset-startOffset)*ease(p);
+    render();
+    if(p<1) animationFrame=requestAnimationFrame(animate);
     else animationFrame=null;
   };
   animationFrame=requestAnimationFrame(animate);
+  return true;
 }
+
+function advanceCueFromSpeech(matchedEnd, confidence){
+  const total=tokenize(els.script.value).length;
+  if(!total)return;
+
+  const confirmed=Math.max(0,Math.min(total,matchedEnd));
+  if(confirmed<=speechProgressWord)return;
+
+  speechProgressWord=confirmed;
+
+  // The word just recognized is highlighted. The next word is the visual
+  // cursor. This means recognition errors do not leave the user staring at
+  // a green word that is already spoken.
+  highlightedWord=Math.max(0,Math.min(total-1,confirmed-1));
+  render();
+
+  const nextWord=Math.min(total-1,confirmed);
+  scrollWordToGuide(nextWord,true);
+
+  log(`Гласово следене: напред до дума ${confirmed}/${total}, ${(confidence*100).toFixed(0)}% съвпадение.`);
+}
+
 function handleSpeechResult(event){
+  // Keep the complete recognition transcript internally, but the UI is a
+  // compact rolling window. Ten visual lines are enough for diagnostics.
   let display="";
   for(let i=0;i<event.results.length;i++){
     display+=(event.results[i][0]?.transcript||"")+" ";
@@ -441,145 +427,72 @@ function handleSpeechResult(event){
   els.transcript.textContent=display.trim()||"—";
   els.transcript.scrollTop=els.transcript.scrollHeight;
 
-  if(speechMode!=="follow"||!event.results.length)return;
+  if(speechMode!=="follow")return;
 
-  // Process every recognition result that changed since the previous event.
-  // Final results are kept by the browser; interim results are revised. The
-  // signature filter lets us use both without double-counting identical text.
-  const start=Math.max(0,Number.isInteger(event.resultIndex)?event.resultIndex:event.results.length-1);
-  let latestMatch=null;
-  let latestMatched=[];
-
-  for(let i=start;i<event.results.length;i++){
+  const from=Math.max(0,event.resultIndex||0);
+  let newest=[];
+  for(let i=from;i<event.results.length;i++){
     const result=event.results[i];
-    const phrase=(result[0]?.transcript||"").trim();
-    if(!phrase)continue;
+    const text=(result[0]?.transcript||"").trim();
+    if(text)newest.push(text);
+  }
+  const newestText=newest.join(" ").trim();
+  if(!newestText)return;
 
-    const signature=`${i}|${result.isFinal?1:0}|${phrase}`;
-    if(result.isFinal){
-      if(speechFinalSignatures.has(signature))continue;
-      speechFinalSignatures.add(signature);
-    }else{
-      if(speechResultCursor===signature)continue;
-      speechResultCursor=signature;
-    }
+  // Try the newest recognition chunk first.
+  let match=findMatch(newestText);
 
-    const match=findMatch(phrase);
-    if(match.index>speechProgressWord){
-      speechProgressWord=match.index;
-      lastMatchedWord=match.index;
-      lastMatchTime=Date.now();
-      speechRecognizedCount+=match.count;
-      latestMatch=match;
-      latestMatched=match.matches||[];
-    }
-
-    if(result.isFinal){
-      // Keep only a short finalized history for diagnostics/context. Matching
-      // itself intentionally uses the current changed segment so old speech
-      // cannot interfere with the forward cursor.
-      speechMatchedHistory=tokenize((speechMatchedHistory+" "+phrase)).slice(-14).join(" ");
-    }
+  // Fast speech may produce an interim/final chunk that ends with a word
+  // already seen. Search the complete newest chunk's tail as a second pass.
+  if(match.index<=speechProgressWord){
+    const tail=tokenize(newestText).slice(-12).join(" ");
+    const tailMatch=findMatch(tail);
+    if(tailMatch.index>match.index)match=tailMatch;
   }
 
-  if(latestMatch && latestMatch.index>0){
-    moveToWord(latestMatch.index,latestMatch.count,latestMatch.score);
-    const trail=latestMatched.slice(-6).map(m=>`${m.spokenWord}→${m.scriptIndex+1}`).join(", ");
-    log(`Следене: ${trail}; +${latestMatch.count} съвп.; ${(latestMatch.score*100).toFixed(0)}%; курсор ${latestMatch.index}/${tokenize(els.script.value).length}.`);
+  if(match.index>speechProgressWord && match.score>=0.60){
+    advanceCueFromSpeech(match.index,match.score);
   }
 }
+
 function attachSpeech(r){
   r.onstart=()=>{
     speechRunning=true;
     els.speechStatus.textContent=speechMode==="follow"?"Следи…":"Слуша…";
     els.speechHint.textContent=speechMode==="follow"
-      ?"Слушам български. Чети текста нормално; курсорът следва само напред."
+      ?"Слушам български. Чети текста нормално; курсорът ще следва напред."
       :"Кажи няколко думи на български.";
     updateSpeechButtons();
-    log("Гласовото разпознаване започна.");
   };
-
-  r.onaudiostart=()=>{
-    els.speechStatus.textContent=speechMode==="follow"?"Слушам…":"Слушам…";
-  };
-
-  r.onspeechstart=()=>{
-    els.speechStatus.textContent=speechMode==="follow"?"Следи…":"Слуша…";
-  };
-
   r.onresult=handleSpeechResult;
-
   r.onerror=e=>{
     speechRunning=false;
     const err=e.error||"unknown";
     log(`Гласово разпознаване: ${err}.`);
-
-    // These are normal interruptions; the onend handler will restart them.
     if(err==="no-speech" || err==="aborted"){
       els.speechStatus.textContent=speechMode==="follow"?"Пауза":"Готово";
       return;
     }
-
     els.speechStatus.textContent="Грешка";
     const fatal=["not-allowed","service-not-allowed","language-not-supported","audio-capture"];
-
     if(fatal.includes(err)){
       speechMode="off";
       clearTimeout(restartTimer);
       updateSpeechButtons();
-
-      if(err==="not-allowed"){
-        els.speechHint.textContent="Микрофонът е отказан. Разреши Microphone за този сайт и натисни отново.";
-      }else if(err==="language-not-supported"){
-        els.speechHint.textContent="Браузърът не предлага bg-BG за SpeechRecognition.";
-      }else if(err==="audio-capture"){
-        els.speechHint.textContent="Микрофонът е зает или недостъпен. Провери разрешенията и другите приложения, които използват микрофона.";
-      }else{
-        els.speechHint.textContent="Браузърът не предостави гласовата услуга.";
-      }
-    }else if(err==="network"){
-      els.speechHint.textContent="Гласовата услуга не отговори. Провери интернет връзката и натисни отново.";
-    }else{
-      els.speechHint.textContent="Гласовото разпознаване прекъсна. Натисни отново.";
+      if(err==="not-allowed") els.speechHint.textContent="Разреши микрофона за сайта и натисни отново.";
+      else if(err==="language-not-supported") els.speechHint.textContent="Този браузър не предлага bg-BG SpeechRecognition.";
+      else if(err==="audio-capture") els.speechHint.textContent="Микрофонът е зает или недостъпен. Спри друга програма/запис, после опитай отново.";
+      else els.speechHint.textContent="Браузърът не предостави гласовата услуга.";
     }
   };
-
   r.onend=()=>{
     speechRunning=false;
-
-    if(speechMode==="off"){
-      updateSpeechButtons();
-      return;
-    }
-
+    if(speechMode==="off"){ updateSpeechButtons(); return; }
     els.speechStatus.textContent=speechMode==="follow"?"Пауза":"Готово";
     clearTimeout(restartTimer);
-
     restartTimer=setTimeout(()=>{
       if(speechMode!=="off" && speech===r && !speechRunning){
-        try{
-          r.start();
-        }catch(e){
-          // A browser may still consider the previous recognition session active.
-          // Recreate the object instead of leaving the user with a dead button.
-          log("Повторен старт чрез нова SpeechRecognition сесия.");
-          speechRunning=false;
-          const mode=speechMode;
-          const replacement=newSpeech();
-          if(!replacement)return;
-          speech=replacement;
-          attachSpeech(replacement);
-          try{
-            replacement.start();
-          }catch(err2){
-            speechMode="off";
-            speech=null;
-            updateSpeechButtons();
-            els.speechStatus.textContent="Грешка";
-            els.speechHint.textContent="Не успях да стартирам гласовото следене. Провери разрешението за микрофона и опитай отново.";
-            log("Неуспешен повторен старт: "+(err2.message||err2));
-          }
-        }
+        try{ r.start(); }catch(_){ log("Повторно стартиране на гласовото следене…"); }
       }
     },350);
   };
@@ -595,72 +508,50 @@ function updateSpeechButtons(){
 function startSpeech(mode){
   if(!speechSupported()){
     els.speechStatus.textContent="Няма поддръжка";
-    els.speechHint.textContent="SpeechRecognition не е наличен в този браузър. Пробвай актуален Chrome или Edge.";
-    log("SpeechRecognition не е наличен в този браузър.");
+    els.speechHint.textContent="SpeechRecognition не е наличен в този браузър. Пробвай актуален Chrome/Edge.";
+    log("SpeechRecognition не е наличен.");
     return;
   }
 
-  // Stop any previous session first. A fresh object avoids the common
-  // InvalidStateError caused by trying to start an already-used recognition
-  // instance while the browser is still closing the previous one.
   speechMode="off";
   clearTimeout(restartTimer);
-  if(speech){try{speech.abort();}catch(_){} speech=null;}
-  speechRunning=false;
+  if(speech){try{speech.abort();}catch(_){}}
+  speech=null; speechRunning=false;
 
   speechMode=mode;
-  finalSpeech="";
-  speechResultCursor=0;
+  finalSpeech=""; speechResultCursor=0;
 
   if(mode==="follow"){
     lastMatchedWord=0;
     speechProgressWord=0;
     speechMatchedHistory="";
-    speechRecognizedCount=0;
-    speechFinalProcessed=new Set();
-    speechFinalSignatures=new Set();
-    speechResultCursor="";
     offset=0;
     highlightedWord=-1;
     render();
   }
 
-  const r=newSpeech();
-  if(!r){
-    speechMode="off";
-    updateSpeechButtons();
-    return;
-  }
+  speech=newSpeech();
+  if(!speech){ speechMode="off"; updateSpeechButtons(); return; }
 
-  speech=r;
-  attachSpeech(r);
+  attachSpeech(speech);
   updateSpeechButtons();
   els.speechStatus.textContent="Стартира…";
   els.speechHint.textContent=mode==="follow"
     ?"Стартирам гласовото следене…"
     :"Стартирам теста за български…";
 
-  // This call must remain directly inside the button click path so browsers
-  // that require a user gesture can open the microphone recognition service.
+  // Called synchronously from the actual click handler.
   try{
-    r.start();
+    speech.start();
     log(mode==="follow"
       ?"Гласовото следене е стартирано. Започни от началото на текста."
       :"Тестът за български е стартиран. Кажи няколко думи.");
   }catch(e){
-    speechMode="off";
-    speechRunning=false;
-    speech=null;
+    speechMode="off"; speechRunning=false;
     updateSpeechButtons();
     els.speechStatus.textContent="Грешка";
-
-    const msg=String(e?.message||e||"");
-    if(msg.toLowerCase().includes("not allowed")){
-      els.speechHint.textContent="Браузърът отказа достъп до микрофона. Разреши Microphone за този сайт и натисни отново.";
-    }else{
-      els.speechHint.textContent="Стартът на гласовото разпознаване беше отказан. Провери микрофона и натисни отново.";
-    }
-    log("Неуспешен старт на речта: "+msg);
+    els.speechHint.textContent="Стартът на гласовото разпознаване беше отказан. Натисни отново.";
+    log("Неуспешен старт на речта: "+(e.message||e));
   }
 }
 
