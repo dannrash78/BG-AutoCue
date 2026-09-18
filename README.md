@@ -108,3 +108,15 @@
 - Плаващите контроли за ▲/▼ и запис/стоп **не се свиват** и винаги остават видими.
 - По подразбиране бутоните за превъртане са **отдясно**.
 - Функционалността на камерата, записа, гласовото следене и autocue не е променяна.
+
+
+## v4.6 — speech positioning + controls initialization
+
+- Fixed the default hand side: **right**.
+- Fixed collapsible sections: the collapse handler is now actually initialized, so clicking the section heading/arrow expands and collapses it.
+- Camera remains non-collapsible.
+- Floating text/recording controls remain always visible.
+- Speech-following now positions the actual matched/next word against the green reading line using the rendered word element, rather than estimating the position from total document height.
+- A single recognition result is capped to a small movement to prevent large jumps.
+- Interim speech does not move the cue; final recognition results do.
+- The newest final speech segment is preferred so old recognized text cannot repeatedly keep the cue stuck.

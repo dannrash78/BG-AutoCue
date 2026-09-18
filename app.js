@@ -108,10 +108,26 @@ function syncHand(value) {
 
 function render() {
   const text = els.script.value || "Постави текста си тук…";
-  els.cueText.textContent=text;
   els.cueText.style.fontSize=els.fontSizeDesk.value+"px";
   els.cueText.style.opacity=Number(els.opacityDesk.value)/100;
   els.cueText.style.transform=`translateY(${offset}px)`;
+
+  // Build indexed word spans. This keeps the visual text essentially identical,
+  // while allowing speech-following to position the exact next word.
+  els.cueText.replaceChildren();
+  const parts = text.split(/(\\s+)/);
+  let wordIndex = 0;
+  for (const part of parts) {
+    if (/^\\s+$/.test(part)) {
+      els.cueText.appendChild(document.createTextNode(part));
+    } else if (part) {
+      const span = document.createElement("span");
+      span.className = "cue-word";
+      span.dataset.wordIndex = String(wordIndex++);
+      span.textContent = part;
+      els.cueText.appendChild(span);
+    }
+  }
 }
 
 function getMaxOffset(){
@@ -309,51 +325,30 @@ function findMatch(spoken){
 }
 
 function moveToWord(idx){
-  const arr=tokenize(els.script.value);
-  if(!arr.length) return;
+  const total=tokenize(els.script.value).length;
+  if(!total)return;
 
-  const clamped=Math.max(0,Math.min(arr.length,idx));
+  const clamped=Math.max(0,Math.min(total-1,idx));
+  const target=els.cueText.querySelector(`.cue-word[data-word-index="${clamped}"]`);
+  if(!target)return;
+
+  const viewportRect=els.viewport.getBoundingClientRect();
+  const targetRect=target.getBoundingClientRect();
+
+  // Green line is the reading line. Put the NEXT word at that line.
+  const guideY=viewportRect.top + viewportRect.height*0.42;
+  const targetY=targetRect.top + Math.min(targetRect.height*0.55, targetRect.height);
+
+  let delta=guideY-targetY;
+
+  // Do not allow a single recognition result to make a giant jump.
+  const maxStep=Math.max(90, Math.min(180, viewportRect.height*0.20));
+  delta=Math.max(-maxStep,Math.min(maxStep,delta));
+
   const max=getMaxOffset();
-  if(max<=0){ render(); return; }
-
-  /*
-   * The green line is the reading line. The spoken/current words should
-   * remain ABOVE it, while the next words approach and sit on the line.
-   * Calculate the actual pixel position of the target word instead of
-   * using a document-wide percentage. This prevents first-sentence jumps.
-   */
-  const textNode=els.cueText;
-  const probe=document.createElement("span");
-  probe.textContent=arr.slice(0,clamped).join(" ")+" ";
-  probe.style.cssText=[
-    "position:absolute","visibility:hidden","white-space:pre-wrap",
-    `font:${getComputedStyle(textNode).font}`,
-    `line-height:${getComputedStyle(textNode).lineHeight}`,
-    `width:${textNode.clientWidth}px`
-  ].join(";");
-  document.body.appendChild(probe);
-  const prefixHeight=probe.offsetHeight;
-  probe.remove();
-
-  const targetY=els.viewport.clientHeight*0.42;
-  // Keep a little of the spoken text above the line; target the next line.
-  let targetOffset=targetY-prefixHeight;
-  targetOffset=Math.min(80,targetOffset);
-
-  /*
-   * offset is the transform of the whole text. We need the prefix height
-   * to land around the green line. Keep motion monotonic and bounded.
-   */
-  const desired = Math.max(-max, Math.min(80, targetOffset));
-  if(desired < offset - 2 || idx > lastMatchedWord){
-    // For sequential matches, use the measured target but never leap more
-    // than 22% of the total cue in a single speech result.
-    const maxStep=Math.max(140,els.viewport.clientHeight*0.22);
-    offset=Math.max(-max, Math.max(offset-maxStep, desired));
-    render();
-  }
+  offset=Math.max(-max,Math.min(80,offset+delta));
+  render();
 }
-
 function handleSpeechResult(event){
   let display="";
   let freshFinal="";
@@ -370,14 +365,20 @@ function handleSpeechResult(event){
 
   // Only final speech advances the cue. Interim speech is displayed but
   // cannot cause a jump.
-  finalSpeech=(finalSpeech+" "+freshFinal).slice(-500);
-  const candidate=findMatch(finalSpeech);
+  // Prefer the newest final segment. Keeping a huge accumulated buffer can
+  // repeatedly match old words and make the cue appear stuck.
+  finalSpeech=(finalSpeech+" "+freshFinal).slice(-220);
+  const candidate=findMatch(freshFinal.trim())>=0
+    ? findMatch(freshFinal.trim())
+    : findMatch(finalSpeech);
 
   if(candidate>lastMatchedWord && candidate-lastMatchedWord<=34){
     lastMatchedWord=candidate;
     lastMatchTime=Date.now();
-    moveToWord(candidate);
-    log(`Гласово следене: намерено съвпадение около дума ${candidate}; позицията е преместена плавно.`);
+    // candidate is the first word after the matched spoken phrase.
+    // Place that next word on the green reading line.
+    moveToWord(Math.min(candidate, tokenize(els.script.value).length-1));
+    log(`Гласово следене: съвпадението е около дума ${candidate}; следващата дума е поставена на зелената линия.`);
   }
 }
 
@@ -527,7 +528,8 @@ window.addEventListener("beforeunload",()=>{
 els.fontSizeMobile.value=els.fontSizeDesk.value;
 els.opacityMobile.value=els.opacityDesk.value;
 els.handMobile.value=els.handDesk.value;
-syncHand("left");
+syncHand("right");
+setupCollapsibleSections();
 render();
 if(!speechSupported()){
   log("SpeechRecognition не е наличен. Пробвай актуален Chrome/Edge; останалите функции са независими.");

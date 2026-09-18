@@ -291,3 +291,23 @@ body.fullscreen-mode .camera-column .record-row button{min-width:0}
 .editor-card .collapse-title h2{
   cursor:pointer;
 }
+
+
+/* v4.6 — collapsible headings are real interactive controls */
+.collapsible-card .collapse-title{
+  cursor:pointer;
+  min-height:22px;
+}
+.collapsible-card .collapse-title::after{
+  display:inline-block;
+  content:"⌃";
+  float:right;
+  cursor:pointer;
+  padding-left:10px;
+  font-size:14px;
+  line-height:1;
+}
+.collapsible-card.is-collapsed .collapse-title::after{
+  content:"⌄";
+}
+.cue-word{white-space:normal}
