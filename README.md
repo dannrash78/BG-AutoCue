@@ -167,3 +167,12 @@
 - Fixed the speech-following movement bug caused by measuring a word element after `render()` had already replaced that DOM element.
 - The matched word is now measured first, then highlighted/rendered, and the cue is smoothly animated to the green reading line.
 - Added a diagnostic message if a speech match has no corresponding visual word marker.
+
+
+## v5.2 — movement travel fix + visible version
+
+- Fixed the travel-limit calculation for the absolutely positioned cue text.
+- The maximum movement distance is now based on the actual rendered cue height.
+- Added a small forward movement fallback when speech has advanced but browser geometry reports an almost-zero delta.
+- The deployed page visibly identifies itself as **BG AutoCue v5.2**.
+- CSS and JavaScript references include `?v=5.2` cache-busting parameters.

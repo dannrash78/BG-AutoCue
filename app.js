@@ -133,7 +133,13 @@ function render() {
 }
 
 function getMaxOffset(){
-  return Math.max(0, els.cueText.scrollHeight - els.viewport.clientHeight + 80);
+  // cueText is absolutely positioned and translated with transform.
+  // Its scrollHeight can be smaller than the visible content area in this
+  // layout, which previously made max offset become 0 and blocked movement.
+  const contentHeight=els.cueText.getBoundingClientRect().height;
+  const viewportHeight=els.viewport.getBoundingClientRect().height;
+  const safety=viewportHeight*0.22;
+  return Math.max(0, contentHeight-viewportHeight+safety);
 }
 function moveBy(px){
   const max=getMaxOffset();
@@ -385,8 +391,21 @@ function moveToWord(idx, matchedWordCount=0, matchConfidence=0){
 
   const max=getMaxOffset();
   const startOffset=offset;
+
+  // When speech has clearly advanced but the browser reports a very small
+  // geometric delta (common while recognition batches results), guarantee a
+  // small forward step instead of getting stuck.
+  if(delta>-4 && clamped>lastMatchedWord-1){
+    delta=-Math.max(18,lineHeight*0.35);
+  }
+
   const targetOffset=Math.max(-max,Math.min(80,startOffset+delta));
-  if(Math.abs(targetOffset-startOffset)<0.5)return;
+  if(Math.abs(targetOffset-startOffset)<0.5){
+    // If the travel limit has been reached, keep the highlight but do not
+    // repeatedly force the text beyond the end.
+    render();
+    return;
+  }
 
   if(animationFrame)cancelAnimationFrame(animationFrame);
 
@@ -439,12 +458,13 @@ function handleSpeechResult(event){
   const match=findMatch(newestFinalText);
 
   if(match.index>lastMatchedWord){
+    const previous=lastMatchedWord;
     lastMatchedWord=match.index;
     lastMatchTime=Date.now();
 
     moveToWord(
       Math.min(match.index,tokenize(els.script.value).length-1),
-      match.count,
+      Math.max(match.count, match.index-previous),
       match.score
     );
 

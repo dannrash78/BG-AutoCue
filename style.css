@@ -386,3 +386,17 @@ body.fullscreen-mode .camera-column .record-row button{min-width:0}
   overflow-wrap:anywhere;
   scroll-behavior:smooth;
 }
+
+
+/* v5.2 — visible build identifier */
+.version-badge{
+  display:inline-block;
+  margin-left:6px;
+  padding:2px 6px;
+  border:1px solid #3a414b;
+  border-radius:6px;
+  font-size:10px;
+  font-weight:800;
+  vertical-align:middle;
+  opacity:.9;
+}
