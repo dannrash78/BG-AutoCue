@@ -176,3 +176,14 @@
 - Added a small forward movement fallback when speech has advanced but browser geometry reports an almost-zero delta.
 - The deployed page visibly identifies itself as **BG AutoCue v5.2**.
 - CSS and JavaScript references include `?v=5.2` cache-busting parameters.
+
+
+## v5.3 — speech cursor + centered smooth scrolling
+
+- Speech following now advances a persistent forward cursor instead of relying on one exact recognized word.
+- The spoken word is highlighted, while the next word becomes the visual reading cursor.
+- The next word is smoothly positioned around the center / green guide line.
+- Longer movements are animated more slowly to avoid large jumps.
+- Matching tolerates missing, merged and slightly misrecognized Bulgarian words.
+- The recognition transcript is visually limited to approximately 10 wrapped lines and scrolls internally.
+- Visible build number and cache-busting remain enabled.

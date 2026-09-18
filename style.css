@@ -400,3 +400,12 @@ body.fullscreen-mode .camera-column .record-row button{min-width:0}
   vertical-align:middle;
   opacity:.9;
 }
+
+/* v5.3 — compact rolling speech transcript */
+.transcript{
+  max-height:calc(1.45em * 10 + 18px);
+  overflow-y:auto;
+  line-height:1.45;
+  scrollbar-width:thin;
+}
+.transcript::-webkit-scrollbar{width:7px}
