@@ -245,3 +245,16 @@
 - Added a safety boundary around visual cue movement so a rendering exception cannot silently stop speech processing.
 - Kept the v5.7 word-count fallback and local 10-word forward matching.
 - Version/cache-busting updated to v5.8.
+
+
+## v5.9 — follow interim recognition instead of waiting for final results
+
+- Fixed the main speech-following issue where the transcript visibly changed but the cue did not move because the browser had not marked results as final.
+- The cue now processes the newly added portion of the current recognized transcript, including interim recognition.
+- Interim revisions are protected with a common-token-prefix calculation so the same words are not repeatedly counted.
+- The cue remains strictly forward-only.
+- Each newly recognized word is matched only within the next 10 script words.
+- If no local match exists, word-count fallback advances by one script word instead of freezing.
+- Restarted SpeechRecognition sessions reset only the transcript-delta baseline, not the cue position.
+- The green marker remains the next word to read and the cue moves it toward the center guide.
+- Version/cache-busting updated to v5.9.

@@ -20,7 +20,7 @@ const els = {
 let stream = null, recorder = null, chunks = [];
 let offset = 0, autoTimer = null;
 let speech = null, speechMode = "off", speechRunning = false, restartTimer = null;
-let finalSpeech = "", lastMatchedWord = 0, speechProgressWord = 0, speechMatchedHistory = "", speechRecognizedCount = 0, speechFinalProcessed = new Set(), speechFinalSignatures = new Set(), lastMatchTime = 0, highlightedWord = -1, animationFrame = null, speechResultCursor = 0;
+let finalSpeech = "", lastMatchedWord = 0, speechProgressWord = 0, speechMatchedHistory = "", speechRecognizedCount = 0, speechFinalProcessed = new Set(), speechFinalSignatures = new Set(), speechConsumedTranscript = "", lastMatchTime = 0, highlightedWord = -1, animationFrame = null, speechResultCursor = 0;
 
 const SAMPLE = `Здравейте и благодаря за поканата.
 
@@ -394,57 +394,67 @@ function applySpeechProgress(newProgress,confidence){
   log(`Гласово следене: ${speechRecognizedCount} думи → следва дума ${speechProgressWord+1}/${total}.`);
 }
 
+function commonTokenPrefix(a,b){
+  const n=Math.min(a.length,b.length);
+  let i=0;
+  while(i<n && a[i]===b[i])i++;
+  return i;
+}
+
 function handleSpeechResult(event){
+  // Always show the complete currently recognized transcript.
   let display="";
   for(let i=0;i<event.results.length;i++)
     display+=(event.results[i][0]?.transcript||"")+" ";
-  els.transcript.textContent=display.trim()||"—";
+  display=display.trim()||"—";
+  els.transcript.textContent=display;
   els.transcript.scrollTop=els.transcript.scrollHeight;
 
   if(speechMode!=="follow")return;
 
+  const currentTokens=tokenize(display==="—"?"":display);
+  const previousTokens=tokenize(speechConsumedTranscript);
+
+  // SpeechRecognition revises interim words. Only the stable/common prefix
+  // is considered already consumed. If the browser changes the last interim
+  // phrase, we process only the genuinely new suffix instead of counting the
+  // same words repeatedly.
+  const prefix=commonTokenPrefix(previousTokens,currentTokens);
+
+  // If Chrome revises text backwards substantially, do not move backwards and
+  // do not reset the cue. Keep the already consumed cursor.
+  const newTokens=currentTokens.slice(prefix);
+
+  if(!newTokens.length){
+    // Still allow final results to be committed as the consumed transcript.
+    // No movement is needed.
+    return;
+  }
+
   let moved=false;
   let strongest=0;
 
-  // Process each final recognition result once. We don't wait for a perfect
-  // match: word count is the fallback that keeps the cue moving.
-  for(let i=0;i<event.results.length;i++){
-    const result=event.results[i];
-    if(!result.isFinal)continue;
+  for(const spokenWord of newTokens){
+    const before=speechProgressWord;
+    const match=findForwardMatch(spokenWord,before);
 
-    const text=(result[0]?.transcript||"").trim();
-    if(!text)continue;
-
-    const signature=`${i}|${normalize(text)}`;
-    if(speechFinalSignatures.has(signature))continue;
-    speechFinalProcessed.add(i);
-    speechFinalSignatures.add(signature);
-
-    const words=tokenize(text);
-    speechRecognizedCount+=words.length;
-
-    for(const spokenWord of words){
-      const before=speechProgressWord;
-      const match=findForwardMatch(spokenWord,before);
-
-      if(match.index>=before){
-        // Local correction: never search behind the cursor and never farther
-        // than ten words ahead.
-        speechProgressWord=match.index+1;
-        strongest=Math.max(strongest,match.score);
-      }else{
-        // COUNT FALLBACK:
-        // If recognition clearly heard a word but cannot match it locally,
-        // assume it corresponds to the next script word rather than freezing.
-        speechProgressWord=Math.min(
-          tokenize(els.script.value).length,
-          speechProgressWord+1
-        );
-      }
-
-      if(speechProgressWord>before)moved=true;
+    if(match.index>=before){
+      speechProgressWord=match.index+1;
+      strongest=Math.max(strongest,match.score);
+    }else{
+      // Word-count fallback: a recognized word that cannot be matched locally
+      // still represents progress. This prevents the cue from freezing.
+      const total=tokenize(els.script.value).length;
+      speechProgressWord=Math.min(total,speechProgressWord+1);
     }
+
+    speechRecognizedCount++;
+    if(speechProgressWord>before)moved=true;
   }
+
+  // Consume exactly the transcript prefix we've just processed. Keep the
+  // entire current transcript so later interim revisions can be compared.
+  speechConsumedTranscript=currentTokens.join(" ");
 
   if(moved){
     lastMatchedWord=speechProgressWord;
@@ -456,10 +466,12 @@ function handleSpeechResult(event){
   }
 }
 
-
 function attachSpeech(r){
   r.onstart=()=>{
     speechRunning=true;
+    // A restarted SpeechRecognition instance begins its result list again.
+    // Keep the cue position but reset only the transcript-delta baseline.
+    speechConsumedTranscript="";
     els.speechStatus.textContent=speechMode==="follow"?"Следи…":"Слуша…";
     els.speechHint.textContent=speechMode==="follow"
       ?"Слушам български. Чети текста нормално; курсорът ще следва напред."
@@ -532,6 +544,7 @@ function startSpeech(mode){
     speechRecognizedCount=0;
     speechFinalProcessed=new Set();
     speechFinalSignatures=new Set();
+    speechConsumedTranscript="";
     offset=0;
     highlightedWord=-1;
     render();
