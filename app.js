@@ -20,7 +20,7 @@ const els = {
 let stream = null, recorder = null, chunks = [];
 let offset = 0, autoTimer = null;
 let speech = null, speechMode = "off", speechRunning = false, restartTimer = null;
-let finalSpeech = "", lastMatchedWord = 0, speechProgressWord = 0, speechMatchedHistory = "", lastMatchTime = 0, highlightedWord = -1, animationFrame = null, speechResultCursor = 0;
+let finalSpeech = "", lastMatchedWord = 0, speechProgressWord = 0, speechMatchedHistory = "", speechRecognizedCount = 0, speechFinalProcessed = new Set(), lastMatchTime = 0, highlightedWord = -1, animationFrame = null, speechResultCursor = 0;
 
 const SAMPLE = `Здравейте и благодаря за поканата.
 
@@ -294,59 +294,46 @@ function sim(a,b){
   }
   return 0;
 }
-function findMatch(spoken){
-  const sw=tokenize(els.script.value);
-  const tw=tokenize(spoken);
-  if(!sw.length||!tw.length)return {index:-1,score:0,count:0};
+function wordMatchScore(scriptWord, spokenWord){
+  if(!scriptWord || !spokenWord) return 0;
+  if(scriptWord === spokenWord) return 1;
 
-  // IMPORTANT: never search the whole script. The speech cursor is a
-  // one-way pointer. A recognition error can move it only forward, and only
-  // inside the next 10 script words. This prevents common words such as
-  // "и", "на", "за" from causing a jump to a later paragraph.
+  // Very short Bulgarian words/syllables are too ambiguous for fuzzy matching.
+  // They must be exact, as requested.
+  if(scriptWord.length <= 3 || spokenWord.length <= 3) return 0;
+
+  if(scriptWord.length === 4 || spokenWord.length === 4){
+    const s=sim(scriptWord,spokenWord);
+    return s>=0.92 ? s : 0;
+  }
+
+  const s=sim(scriptWord,spokenWord);
+  // Long words can tolerate recognition endings/prefixes and small errors.
+  return s>=0.70 ? s : 0;
+}
+
+function findNextWordMatch(spokenWord){
+  const sw=tokenize(els.script.value);
+  if(!sw.length || !spokenWord) return {index:-1,score:0};
+
   const base=Math.max(0,speechProgressWord);
   const limit=Math.min(sw.length,base+10);
-  const spokenWords=tw.slice(-18);
 
-  // First try to align a short consecutive phrase against the next 10 words.
-  // Prefer the EARLIEST valid alignment, not the highest-scoring distant one.
-  // That is the key difference from the previous version.
-  let best={index:-1,score:0,count:0,start:-1};
-  const maxN=Math.min(8,spokenWords.length);
-  for(let n=maxN;n>=2;n--){
-    const phrase=spokenWords.slice(-n);
-    for(let i=base;i<=Math.min(limit-n,base+9);i++){
-      let total=0,hits=0;
-      for(let j=0;j<n;j++){
-        const q=sim(sw[i+j],phrase[j]);
-        if(q>=0.58){hits++;total+=q;}
-      }
-      const coverage=hits/n;
-      const score=(total/Math.max(1,n))*0.75+coverage*0.25;
-      if(hits>=Math.max(2,Math.ceil(n*0.60)) && score>=0.64){
-        best={index:i+n,score,count:n,start:i};
-        // Earliest valid phrase wins. Do not keep searching farther down.
-        break;
-      }
-    }
-    if(best.index>=0)break;
-  }
-  if(best.index>=0)return best;
-
-  // Single-word fallback, but only for useful/content words. Search at most
-  // 10 words ahead and take the first sufficiently strong match.
-  const stop=new Set(['и','а','в','във','на','за','с','със','от','до','по','при','че','да','се','си','е','са','ще','не','но','като','която','който','кои','това','тези','този','тази','то','го','ги','му','ми','ме','ви','те','аз','ти','ние','вие','той','тя','те','как','какво','към','или','ако','след','преди','още','само']);
-  for(const w of spokenWords.slice(-5).reverse()){
-    if(stop.has(w)||w.length<4)continue;
-    for(let i=base;i<limit;i++){
-      const q=sim(sw[i],w);
-      if(q>=0.82)return {index:i+1,score:q,count:1,start:i};
-    }
+  // Pass 1: exact/very strong matches. Always choose the earliest match.
+  for(let i=base;i<limit;i++){
+    const s=wordMatchScore(sw[i],spokenWord);
+    if(s>=0.92) return {index:i,score:s};
   }
 
-  return best;
-}
-function getWordElement(index){
-  return els.cueText.querySelector(`.cue-word[data-word-index="${index}"]`);
+  // Pass 2: long-word fuzzy matching. Still earliest only, never a distant
+  // "best" match. This is what prevents jumps to later paragraphs.
+  for(let i=base;i<limit;i++){
+    const s=wordMatchScore(sw[i],spokenWord);
+    if(s>=0.70 && Math.min(sw[i].length,spokenWord.length)>=5)
+      return {index:i,score:s};
+  }
+
+  return {index:-1,score:0};
 }
 
 function scrollWordToGuide(index, smooth=true){
@@ -371,9 +358,8 @@ function scrollWordToGuide(index, smooth=true){
   if(animationFrame) cancelAnimationFrame(animationFrame);
 
   const distance=Math.abs(targetOffset-startOffset);
-  // Longer travel gets a longer glide, so the text never appears to teleport.
   const duration=smooth
-    ? Math.max(380,Math.min(1250,420+distance*2.2))
+    ? Math.max(420,Math.min(1100,420+distance*2.0))
     : 0;
 
   if(!duration){
@@ -396,30 +382,25 @@ function scrollWordToGuide(index, smooth=true){
   return true;
 }
 
-function advanceCueFromSpeech(matchedEnd, confidence){
+function applySpeechProgress(newProgress, confidence){
   const total=tokenize(els.script.value).length;
-  if(!total)return;
+  if(!total || newProgress<=speechProgressWord) return;
 
-  const confirmed=Math.max(0,Math.min(total,matchedEnd));
-  if(confirmed<=speechProgressWord)return;
+  speechProgressWord=Math.min(total,newProgress);
 
-  speechProgressWord=confirmed;
-
-  // The word just recognized is highlighted. The next word is the visual
-  // cursor. This means recognition errors do not leave the user staring at
-  // a green word that is already spoken.
-  highlightedWord=Math.max(0,Math.min(total-1,confirmed-1));
+  // The last spoken word is green. The next word is the visual reading
+  // cursor, so recognition errors cannot leave the green marker behind.
+  highlightedWord=Math.max(0,Math.min(total-1,speechProgressWord-1));
   render();
 
-  const nextWord=Math.min(total-1,confirmed);
+  const nextWord=Math.min(total-1,speechProgressWord);
   scrollWordToGuide(nextWord,true);
 
-  log(`Гласово следене: напред до дума ${confirmed}/${total}, ${(confidence*100).toFixed(0)}% съвпадение.`);
+  log(`Гласово следене: ${speechRecognizedCount} разпознати думи → дума ${speechProgressWord}/${total}.`);
 }
 
 function handleSpeechResult(event){
-  // Keep the complete recognition transcript internally, but the UI is a
-  // compact rolling window. Ten visual lines are enough for diagnostics.
+  // Keep the transcript visible, but let the field scroll internally.
   let display="";
   for(let i=0;i<event.results.length;i++){
     display+=(event.results[i][0]?.transcript||"")+" ";
@@ -429,31 +410,45 @@ function handleSpeechResult(event){
 
   if(speechMode!=="follow")return;
 
-  const from=Math.max(0,event.resultIndex||0);
-  let newest=[];
-  for(let i=from;i<event.results.length;i++){
+  let furthest=speechProgressWord;
+  let confidence=0;
+
+  // Process every NEW final recognition result exactly once. We deliberately
+  // do not depend on resultIndex because Chrome can revise interim results
+  // and resultIndex may point to an item that was already inspected.
+  for(let i=0;i<event.results.length;i++){
     const result=event.results[i];
+    if(!result.isFinal || speechFinalProcessed.has(i)) continue;
+
     const text=(result[0]?.transcript||"").trim();
-    if(text)newest.push(text);
+    speechFinalProcessed.add(i);
+    if(!text) continue;
+
+    const words=tokenize(text);
+    speechRecognizedCount+=words.length;
+
+    // Each recognized word is compared ONLY against the next ten script
+    // words from the current cursor. Never search backwards.
+    for(const spokenWord of words){
+      const match=findNextWordMatch(spokenWord);
+      if(match.index>=speechProgressWord){
+        furthest=match.index+1;
+        confidence=Math.max(confidence,match.score);
+        // Move the local cursor immediately so the following recognized word
+        // continues from the new position rather than the old one.
+        speechProgressWord=furthest;
+      }
+    }
   }
-  const newestText=newest.join(" ").trim();
-  if(!newestText)return;
 
-  // Try the newest recognition chunk first.
-  let match=findMatch(newestText);
-
-  // Fast speech may produce an interim/final chunk that ends with a word
-  // already seen. Search the complete newest chunk's tail as a second pass.
-  if(match.index<=speechProgressWord){
-    const tail=tokenize(newestText).slice(-12).join(" ");
-    const tailMatch=findMatch(tail);
-    if(tailMatch.index>match.index)match=tailMatch;
-  }
-
-  if(match.index>speechProgressWord && match.score>=0.60){
-    advanceCueFromSpeech(match.index,match.score);
+  // Restore the persistent cursor to the furthest confirmed point and move
+  // the visual cue only ONCE per recognition event, avoiding repeated jumps.
+  if(furthest>0 && furthest>lastMatchedWord){
+    lastMatchedWord=furthest;
+    applySpeechProgress(furthest,confidence||0.70);
   }
 }
+
 
 function attachSpeech(r){
   r.onstart=()=>{
@@ -487,6 +482,7 @@ function attachSpeech(r){
   };
   r.onend=()=>{
     speechRunning=false;
+    speechFinalProcessed=new Set();
     if(speechMode==="off"){ updateSpeechButtons(); return; }
     els.speechStatus.textContent=speechMode==="follow"?"Пауза":"Готово";
     clearTimeout(restartTimer);
@@ -525,6 +521,8 @@ function startSpeech(mode){
     lastMatchedWord=0;
     speechProgressWord=0;
     speechMatchedHistory="";
+    speechRecognizedCount=0;
+    speechFinalProcessed=new Set();
     offset=0;
     highlightedWord=-1;
     render();

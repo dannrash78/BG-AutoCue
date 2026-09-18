@@ -206,3 +206,19 @@
 - Single-word fallback ignores common Bulgarian stop words and also searches only the next 10 words.
 - The existing smooth centering/highlighting behavior is preserved.
 - Visible build number and cache-busting updated to v5.5.
+
+
+## v5.6 — forward 10-word speech cursor
+
+- Speech progress is now driven by a persistent count of recognized words.
+- Every newly finalized recognized word searches only the next **10 script words**.
+- The search is strictly forward and can never move the cursor backwards.
+- Short words (up to 3 letters) require exact matching.
+- Four-letter words require very high similarity.
+- Longer words allow controlled fuzzy matching for Bulgarian SpeechRecognition errors.
+- The earliest valid match is used; a more distant "better" match cannot cause a jump.
+- Multiple recognized words from one recognition result are processed sequentially.
+- The cue is moved only once after the whole result is processed, making movement smoother.
+- The spoken word remains highlighted while the next word becomes the reading position.
+- Recognition result indexes are tracked per recognition session to prevent the buffer from being processed repeatedly.
+- Visible version and cache-busting updated to v5.6.
