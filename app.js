@@ -484,35 +484,54 @@ function attachSpeech(r){
     speechRunning=true;
     els.speechStatus.textContent=speechMode==="follow"?"Следи…":"Слуша…";
     els.speechHint.textContent=speechMode==="follow"
-      ?"Слушам български. Чети текста нормално; курсорът следва напред."
+      ?"Слушам български. Чети текста нормално; курсорът следва само напред."
       :"Кажи няколко думи на български.";
     updateSpeechButtons();
+    log("Гласовото разпознаване започна.");
+  };
+
+  r.onaudiostart=()=>{
+    els.speechStatus.textContent=speechMode==="follow"?"Слушам…":"Слушам…";
+  };
+
+  r.onspeechstart=()=>{
+    els.speechStatus.textContent=speechMode==="follow"?"Следи…":"Слуша…";
   };
 
   r.onresult=handleSpeechResult;
 
   r.onerror=e=>{
     speechRunning=false;
+    const err=e.error||"unknown";
+    log(`Гласово разпознаване: ${err}.`);
+
+    // These are normal interruptions; the onend handler will restart them.
+    if(err==="no-speech" || err==="aborted"){
+      els.speechStatus.textContent=speechMode==="follow"?"Пауза":"Готово";
+      return;
+    }
+
     els.speechStatus.textContent="Грешка";
-    log(`Гласово разпознаване: ${e.error}.`);
+    const fatal=["not-allowed","service-not-allowed","language-not-supported","audio-capture"];
 
-    const fatal=[
-      "not-allowed",
-      "service-not-allowed",
-      "language-not-supported",
-      "audio-capture"
-    ];
-
-    if(fatal.includes(e.error)){
+    if(fatal.includes(err)){
       speechMode="off";
+      clearTimeout(restartTimer);
       updateSpeechButtons();
 
-      if(e.error==="not-allowed")
-        els.speechHint.textContent="Разреши микрофона за сайта и опитай отново.";
-      else if(e.error==="language-not-supported")
-        els.speechHint.textContent="Този браузър не предлага bg-BG SpeechRecognition.";
-      else
+      if(err==="not-allowed"){
+        els.speechHint.textContent="Микрофонът е отказан. Разреши Microphone за този сайт и натисни отново.";
+      }else if(err==="language-not-supported"){
+        els.speechHint.textContent="Браузърът не предлага bg-BG за SpeechRecognition.";
+      }else if(err==="audio-capture"){
+        els.speechHint.textContent="Микрофонът е зает или недостъпен. Провери разрешенията и другите приложения, които използват микрофона.";
+      }else{
         els.speechHint.textContent="Браузърът не предостави гласовата услуга.";
+      }
+    }else if(err==="network"){
+      els.speechHint.textContent="Гласовата услуга не отговори. Провери интернет връзката и натисни отново.";
+    }else{
+      els.speechHint.textContent="Гласовото разпознаване прекъсна. Натисни отново.";
     }
   };
 
@@ -524,59 +543,34 @@ function attachSpeech(r){
       return;
     }
 
-    clearTimeout(restartTimer);
-    restartTimer=setTimeout(()=>{
-      if(speechMode!=="off"&&speech&&!speechRunning){
-        try{speech.start();}catch(_){}
-      }
-    },500);
-  };
-}
-
-
-function attachSpeech(r){
-  r.onstart=()=>{
-    speechRunning=true;
-    // A restarted SpeechRecognition instance begins its result list again.
-    // Keep the cue position but reset only the transcript-delta baseline.
-    speechConsumedTranscript="";
-    els.speechStatus.textContent=speechMode==="follow"?"Следи…":"Слуша…";
-    els.speechHint.textContent=speechMode==="follow"
-      ?"Слушам български. Чети текста нормално; курсорът ще следва напред."
-      :"Кажи няколко думи на български.";
-    updateSpeechButtons();
-  };
-  r.onresult=handleSpeechResult;
-  r.onerror=e=>{
-    speechRunning=false;
-    const err=e.error||"unknown";
-    log(`Гласово разпознаване: ${err}.`);
-    if(err==="no-speech" || err==="aborted"){
-      els.speechStatus.textContent=speechMode==="follow"?"Пауза":"Готово";
-      return;
-    }
-    els.speechStatus.textContent="Грешка";
-    const fatal=["not-allowed","service-not-allowed","language-not-supported","audio-capture"];
-    if(fatal.includes(err)){
-      speechMode="off";
-      clearTimeout(restartTimer);
-      updateSpeechButtons();
-      if(err==="not-allowed") els.speechHint.textContent="Разреши микрофона за сайта и натисни отново.";
-      else if(err==="language-not-supported") els.speechHint.textContent="Този браузър не предлага bg-BG SpeechRecognition.";
-      else if(err==="audio-capture") els.speechHint.textContent="Микрофонът е зает или недостъпен. Спри друга програма/запис, после опитай отново.";
-      else els.speechHint.textContent="Браузърът не предостави гласовата услуга.";
-    }
-  };
-  r.onend=()=>{
-    speechRunning=false;
-    speechFinalProcessed=new Set();
-    speechFinalSignatures=new Set();
-    if(speechMode==="off"){ updateSpeechButtons(); return; }
     els.speechStatus.textContent=speechMode==="follow"?"Пауза":"Готово";
     clearTimeout(restartTimer);
+
     restartTimer=setTimeout(()=>{
       if(speechMode!=="off" && speech===r && !speechRunning){
-        try{ r.start(); }catch(_){ log("Повторно стартиране на гласовото следене…"); }
+        try{
+          r.start();
+        }catch(e){
+          // A browser may still consider the previous recognition session active.
+          // Recreate the object instead of leaving the user with a dead button.
+          log("Повторен старт чрез нова SpeechRecognition сесия.");
+          speechRunning=false;
+          const mode=speechMode;
+          const replacement=newSpeech();
+          if(!replacement)return;
+          speech=replacement;
+          attachSpeech(replacement);
+          try{
+            replacement.start();
+          }catch(err2){
+            speechMode="off";
+            speech=null;
+            updateSpeechButtons();
+            els.speechStatus.textContent="Грешка";
+            els.speechHint.textContent="Не успях да стартирам гласовото следене. Провери разрешението за микрофона и опитай отново.";
+            log("Неуспешен повторен старт: "+(err2.message||err2));
+          }
+        }
       }
     },350);
   };
@@ -592,18 +586,22 @@ function updateSpeechButtons(){
 function startSpeech(mode){
   if(!speechSupported()){
     els.speechStatus.textContent="Няма поддръжка";
-    els.speechHint.textContent="SpeechRecognition не е наличен в този браузър. Пробвай актуален Chrome/Edge.";
-    log("SpeechRecognition не е наличен.");
+    els.speechHint.textContent="SpeechRecognition не е наличен в този браузър. Пробвай актуален Chrome или Edge.";
+    log("SpeechRecognition не е наличен в този браузър.");
     return;
   }
 
+  // Stop any previous session first. A fresh object avoids the common
+  // InvalidStateError caused by trying to start an already-used recognition
+  // instance while the browser is still closing the previous one.
   speechMode="off";
   clearTimeout(restartTimer);
-  if(speech){try{speech.abort();}catch(_){}}
-  speech=null; speechRunning=false;
+  if(speech){try{speech.abort();}catch(_){} speech=null;}
+  speechRunning=false;
 
   speechMode=mode;
-  finalSpeech=""; speechResultCursor=0;
+  finalSpeech="";
+  speechResultCursor=0;
 
   if(mode==="follow"){
     lastMatchedWord=0;
@@ -612,34 +610,47 @@ function startSpeech(mode){
     speechRecognizedCount=0;
     speechFinalProcessed=new Set();
     speechFinalSignatures=new Set();
-    speechConsumedTranscript="";
     offset=0;
     highlightedWord=-1;
     render();
   }
 
-  speech=newSpeech();
-  if(!speech){ speechMode="off"; updateSpeechButtons(); return; }
+  const r=newSpeech();
+  if(!r){
+    speechMode="off";
+    updateSpeechButtons();
+    return;
+  }
 
-  attachSpeech(speech);
+  speech=r;
+  attachSpeech(r);
   updateSpeechButtons();
   els.speechStatus.textContent="Стартира…";
   els.speechHint.textContent=mode==="follow"
     ?"Стартирам гласовото следене…"
     :"Стартирам теста за български…";
 
-  // Called synchronously from the actual click handler.
+  // This call must remain directly inside the button click path so browsers
+  // that require a user gesture can open the microphone recognition service.
   try{
-    speech.start();
+    r.start();
     log(mode==="follow"
       ?"Гласовото следене е стартирано. Започни от началото на текста."
       :"Тестът за български е стартиран. Кажи няколко думи.");
   }catch(e){
-    speechMode="off"; speechRunning=false;
+    speechMode="off";
+    speechRunning=false;
+    speech=null;
     updateSpeechButtons();
     els.speechStatus.textContent="Грешка";
-    els.speechHint.textContent="Стартът на гласовото разпознаване беше отказан. Натисни отново.";
-    log("Неуспешен старт на речта: "+(e.message||e));
+
+    const msg=String(e?.message||e||"");
+    if(msg.toLowerCase().includes("not allowed")){
+      els.speechHint.textContent="Браузърът отказа достъп до микрофона. Разреши Microphone за този сайт и натисни отново.";
+    }else{
+      els.speechHint.textContent="Стартът на гласовото разпознаване беше отказан. Провери микрофона и натисни отново.";
+    }
+    log("Неуспешен старт на речта: "+msg);
   }
 }
 
