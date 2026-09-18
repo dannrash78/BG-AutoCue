@@ -260,7 +260,7 @@
 - Version/cache-busting updated to v5.9.
 
 
-## v5.10 — restored proven speech-following engine
+## v5.14 — restored proven speech-following engine
 
 Compared with the earlier versions, the speech-following core was aligned with the v4.8 implementation that successfully moved and highlighted the cue:
 
@@ -274,11 +274,28 @@ Compared with the earlier versions, the speech-following core was aligned with t
 - Movement is performed by the proven direct DOM word lookup and smooth `moveToWord()` path.
 - The next word is highlighted after the recognized position.
 - Camera, recording, layout, collapse controls and mobile layout are inherited unchanged from v5.9.
-- Visible version/cache-busting updated to v5.10.
+- Visible version/cache-busting updated to v5.14.
 
 
-## v5.13
+## v5.12
 - Fixed the speech-following scroll calculation.
 - The target word is re-queried after `render()` rebuilds the word spans, so its real screen position is measured.
 - The visual guide line is aligned with the 50% center used by the movement calculation.
-- Speech recognition, matching and highlighting logic otherwise remains unchanged from v5.13.
+- Speech recognition, matching and highlighting logic otherwise remains unchanged from v5.11.
+
+
+## v5.14
+- Restored the complete speech matching functions from v5.12.
+- Restored all camera/recording functions and complete startup bindings.
+- Fixed the v5.13 fatal initialization issue caused by missing function definitions.
+- Bumped the app cache-buster to v5.14.
+- Speech-following highlight is applied with one render, then scrolling animates by direct transform only.
+- Manual and automatic cue movement also update the transform directly.
+
+
+## v5.14 — detailed repair
+- Restored the complete v5.12 speech matcher: `wordMatchScore()` and `findMatch()`.
+- Restored the complete camera/recording startup functions required by page initialization.
+- Fixed the v5.13 initialization-breaking `ReferenceError: startCamera is not defined`; because initialization stopped there, later speech-button event listeners were never registered.
+- Updated the visible version and JavaScript cache-buster to v5.14.
+- Speech-following scroll now renders once for highlighting, then animates only `translateY`, without rebuilding the cue on every animation frame.

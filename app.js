@@ -133,11 +133,13 @@ function render() {
 }
 
 function getMaxOffset(){
-  // The cue is moved with transform, so use the element's actual rendered
-  // height rather than scrollTop/scrollHeight of the viewport.
+  // cueText is absolutely positioned and translated with transform.
+  // Its scrollHeight can be smaller than the visible content area in this
+  // layout, which previously made max offset become 0 and blocked movement.
   const contentHeight=els.cueText.getBoundingClientRect().height;
   const viewportHeight=els.viewport.getBoundingClientRect().height;
-  return Math.max(0, contentHeight-viewportHeight);
+  const safety=viewportHeight*0.22;
+  return Math.max(0, contentHeight-viewportHeight+safety);
 }
 function moveBy(px){
   const max=getMaxOffset();
@@ -161,6 +163,227 @@ function stopAuto(){
   autoTimer=null; els.autoBtn.textContent="▶ Авто";
 }
 
+async function startCamera(){
+  if(!navigator.mediaDevices?.getUserMedia){
+    els.cameraStatus.textContent="Няма API";
+    log("Камерата изисква HTTPS/localhost и актуален браузър.");
+    return;
+  }
+  els.cameraBtn.disabled=true;
+  els.cameraStatus.textContent="Стартира…";
+  try{
+    let s;
+    try{
+      s=await navigator.mediaDevices.getUserMedia({
+        video:{facingMode:{ideal:"user"},width:{ideal:1280},height:{ideal:720}},audio:true
+      });
+      log("Камера + микрофон са разрешени.");
+    }catch(e){
+      log(`Камера+микрофон: ${e.name}. Пробвам камера самостоятелно…`);
+      s=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"user"}},audio:false});
+      log("Камерата работи без микрофон.");
+    }
+    stream=s; els.preview.srcObject=s; els.preview.muted=true;
+    await els.preview.play();
+    const hasAudio=s.getAudioTracks().length>0;
+    els.cameraStatus.textContent=hasAudio?"Камера + звук":"Само камера";
+    els.cameraBtn.textContent="✓ Камерата работи";
+    els.recordBtn.disabled=!window.MediaRecorder;
+    els.recordFloat.disabled=!window.MediaRecorder;
+    log(hasAudio?"Камерата и микрофонът са готови за запис.":"Камерата е готова; записът ще бъде без звук.");
+  }catch(e){
+    els.cameraBtn.disabled=false; els.cameraStatus.textContent="Грешка";
+    let m=e.name||"UnknownError";
+    if(e.name==="NotAllowedError")m+=" — разреши камерата и микрофона за този сайт.";
+    if(e.name==="NotFoundError")m+=" — не е намерена камера.";
+    if(e.name==="NotReadableError")m+=" — камерата се използва от друга програма.";
+    if(e.name==="SecurityError")m+=" — използвай HTTPS.";
+    log("Камерата не стартира: "+m);
+  }
+}
+
+function mime(){
+  const types=["video/webm;codecs=vp9,opus","video/webm;codecs=vp8,opus","video/webm","video/mp4"];
+  return types.find(t=>window.MediaRecorder?.isTypeSupported(t))||"";
+}
+function updateRecordButtons(active){
+  // Camera-card and floating recording buttons have identical behavior:
+  // ● Record -> ⏸ Pause -> ▶ Continue.
+  els.recordBtn.disabled=!stream;
+  els.recordFloat.disabled=!stream;
+  els.stopRecordBtn.disabled=!active;
+  els.stopFloat.disabled=!active;
+
+  if(!active){
+    els.recordBtn.textContent="●";
+    els.recordFloat.textContent="●";
+  }
+}
+function startRecording(){
+  if(!stream||!window.MediaRecorder){log("Първо стартирай камерата.");return;}
+  chunks=[];
+  try{ recorder=new MediaRecorder(stream,mime()?{mimeType:mime()}:undefined); }
+  catch(e){log("Записът не може да започне: "+e.message);return;}
+  recorder.ondataavailable=e=>{if(e.data?.size)chunks.push(e.data)};
+  recorder.onstop=saveRecording;
+  recorder.onerror=e=>log("Грешка при записа.");
+  recorder.start(250);
+  updateRecordButtons(true);
+  els.recordStatus.textContent="● Записва…";
+  els.recordBtn.textContent="⏸";
+  els.recordFloat.textContent="⏸";
+  log("Видео записът започна.");
+}
+function toggleRecording(){
+  if(!recorder||recorder.state==="inactive"){startRecording();return;}
+  if(recorder.state==="recording"){
+    recorder.pause(); els.recordStatus.textContent="⏸ Пауза"; els.recordBtn.textContent="▶"; els.recordFloat.textContent="▶";
+    log("Видео записът е на пауза.");
+  }else if(recorder.state==="paused"){
+    recorder.resume(); els.recordStatus.textContent="● Записва…"; els.recordBtn.textContent="⏸"; els.recordFloat.textContent="⏸";
+    log("Видео записът продължи.");
+  }
+}
+function stopRecording(){
+  if(recorder&&recorder.state!=="inactive"){recorder.stop();els.recordStatus.textContent="Обработва…";log("Видео записът е спрян.");}
+}
+function saveRecording(){
+  if(!chunks.length){els.recordStatus.textContent="Няма данни";updateRecordButtons(false);return;}
+  const type=recorder.mimeType||"video/webm";
+  const blob=new Blob(chunks,{type});
+  const url=URL.createObjectURL(blob);
+  const ext=type.includes("mp4")?"mp4":"webm";
+  const a=document.createElement("a");
+  a.href=url;a.download=`bg-autocue-${Date.now()}.${ext}`;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1500);
+  els.recordStatus.textContent="✓ Записът е готов";
+  els.recordBtn.textContent="●";
+  els.recordFloat.textContent="●";
+  updateRecordButtons(false);
+  log("Файлът с видеото е създаден и изтеглянето е стартирано.");
+}
+
+function speechSupported(){return !!(window.SpeechRecognition||window.webkitSpeechRecognition);}
+function newSpeech(){
+  const C=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!C)return null;
+  const r=new C();
+  r.lang="bg-BG";r.continuous=true;r.interimResults=true;r.maxAlternatives=3;
+  return r;
+}
+function lev(a,b){
+  const dp=new Array(b.length+1);
+  for(let j=0;j<=b.length;j++)dp[j]=j;
+  for(let i=1;i<=a.length;i++){
+    let prev=dp[0];dp[0]=i;
+    for(let j=1;j<=b.length;j++){
+      const temp=dp[j];
+      dp[j]=Math.min(dp[j]+1,dp[j-1]+1,prev+(a[i-1]===b[j-1]?0:1));
+      prev=temp;
+    }
+  }
+  return dp[b.length];
+}
+function sim(a,b){
+  if(a===b)return 1;
+  if(!a||!b)return 0;
+  if((a.startsWith(b)||b.startsWith(a)) && Math.min(a.length,b.length)>=4){ const ratio=Math.min(a.length,b.length)/Math.max(a.length,b.length); return ratio>=0.55?0.93:ratio; }
+  if(a.length>=5&&b.length>=5){
+    const d=lev(a,b), m=Math.max(a.length,b.length);
+    return 1-d/m;
+  }
+  return 0;
+}
+function wordMatchScore(scriptWord, spokenWord){
+  if(!scriptWord || !spokenWord)return 0;
+  if(scriptWord===spokenWord)return 1;
+  if(scriptWord.length<=3 || spokenWord.length<=3)return 0;
+
+  const s=sim(scriptWord,spokenWord);
+  if(scriptWord.length===4 || spokenWord.length===4)
+    return s>=0.90?s:0;
+  return s>=0.68?s:0;
+}
+
+function findMatch(spoken){
+  const sw=tokenize(els.script.value);
+  const tw=tokenize(spoken);
+  if(!sw.length||!tw.length)return {index:-1,score:0,count:0};
+
+  // Proven v4.8 strategy: compare a short consecutive phrase against the
+  // script, but make the search window strictly 10 words ahead.
+  const base=Math.max(0,speechProgressWord);
+  const limit=Math.min(sw.length,base+10);
+  const recent=tw.slice(-10);
+
+  let best={score:0,index:-1,count:0};
+
+  // Prefer longer consecutive phrases. Earliest valid alignment wins.
+  for(let n=Math.min(7,recent.length);n>=3;n--){
+    const phrase=recent.slice(-n);
+
+    for(let i=base;i<=limit-n;i++){
+      let total=0,hits=0;
+
+      for(let j=0;j<n;j++){
+        const s=wordMatchScore(sw[i+j],phrase[j]);
+        if(s>0){
+          total+=s;
+          hits++;
+        }
+      }
+
+      const coverage=hits/n;
+      const score=(total/Math.max(1,n))*0.72+coverage*0.28;
+
+      if(hits>=Math.ceil(n*0.70) && score>=0.64){
+        best={score,index:i+n,count:n};
+        // IMPORTANT: first valid position wins. Never search farther down
+        // simply because a later phrase has a slightly higher score.
+        break;
+      }
+    }
+
+    if(best.index>=0)break;
+  }
+
+  // Two-word fallback for normal speech chunks.
+  if(best.index<0 && recent.length>=2){
+    const a=recent[recent.length-2];
+    const b=recent[recent.length-1];
+
+    for(let i=base;i<Math.min(limit-1,sw.length-1);i++){
+      const sa=wordMatchScore(sw[i],a);
+      const sb=wordMatchScore(sw[i+1],b);
+
+      if(sa>=0.88 && sb>=0.88)
+        return {index:i+2,score:(sa+sb)/2,count:2};
+    }
+  }
+
+  // Single useful-word fallback. Short grammatical words cannot move the cue
+  // by themselves. This prevents "и/на/за/се" from causing false jumps.
+  const stop=new Set([
+    "и","а","в","във","на","за","с","със","от","до","по","при","че","да",
+    "се","си","е","са","ще","не","но","като","която","който","кои","това",
+    "тези","този","тази","то","го","ги","му","ми","ме","ви","те","аз","ти",
+    "ние","вие","той","тя","как","какво","към","или","ако","след","преди",
+    "още","само"
+  ]);
+
+  for(const spokenWord of recent.slice(-5).reverse()){
+    if(stop.has(spokenWord)||spokenWord.length<4)continue;
+
+    for(let i=base;i<limit;i++){
+      const s=wordMatchScore(sw[i],spokenWord);
+      if(s>=0.82)
+        return {index:i+1,score:s,count:1};
+    }
+  }
+
+  return best;
+}
+
 function getWordElement(index){
   if(!els.cueText)return null;
   return els.cueText.querySelector(`.cue-word[data-word-index="${index}"]`);
@@ -172,8 +395,8 @@ function moveToWord(idx,matchedWordCount=0,matchConfidence=0){
 
   const clamped=Math.max(0,Math.min(total-1,idx));
 
-  // Highlight first, then measure the LIVE element. The previous versions
-  // measured/re-rendered repeatedly, which made the movement fragile.
+  // Re-render once to apply the new highlight, then measure the NEW live word.
+  // Never rebuild the cue during the animation itself.
   highlightedWord=Math.max(0,Math.min(total-1,clamped-1));
   render();
 
@@ -185,8 +408,8 @@ function moveToWord(idx,matchedWordCount=0,matchConfidence=0){
   const guideY=viewportRect.top+viewportRect.height*0.50;
   const targetY=targetRect.top+targetRect.height*0.50;
 
-  // Because targetY already includes the current transform, this gives the
-  // exact transform that would place the target on the guide line.
+  // targetY already includes the current cue transform. Adding the difference
+  // to the current offset places the target on the guide line.
   const desiredOffset=offset+(guideY-targetY);
   const max=getMaxOffset();
   const targetOffset=Math.max(-max,Math.min(80,desiredOffset));
@@ -201,19 +424,17 @@ function moveToWord(idx,matchedWordCount=0,matchConfidence=0){
 
   const startOffset=offset;
   const distance=targetOffset-startOffset;
-  // Keep individual jumps bounded, but never prevent normal forward movement.
-  const maxJump=Math.max(90,Math.min(260,viewportRect.height*0.45));
+  const maxJump=Math.max(120,Math.min(420,viewportRect.height*0.70));
   const boundedTarget=startOffset+Math.max(-maxJump,Math.min(maxJump,distance));
-  const duration=Math.max(260,Math.min(650,180+Math.abs(boundedTarget-startOffset)*1.8));
+  const duration=Math.max(300,Math.min(850,260+Math.abs(boundedTarget-startOffset)*1.35));
   const started=performance.now();
   const ease=t=>t<0.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
 
   const animate=now=>{
     const p=Math.min(1,(now-started)/duration);
     offset=startOffset+(boundedTarget-startOffset)*ease(p);
-    // Do NOT call render() on every animation frame. render() rebuilds all
-    // word spans. Updating only the transform keeps the same live DOM nodes
-    // and makes the scroll deterministic and smooth.
+    // Only change the transform. Rebuilding the DOM here breaks the measured
+    // target and was the main source of the previous scroll failures.
     els.cueText.style.transform=`translateY(${offset}px)`;
     if(p<1)animationFrame=requestAnimationFrame(animate);
     else animationFrame=null;
