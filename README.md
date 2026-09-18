@@ -196,3 +196,13 @@
 - Hardened start/error/end lifecycle and automatic restart after normal recognition pauses.
 - Clear microphone and permission diagnostics.
 - Visible version/cache-busting updated to v5.4.
+
+
+## v5.5 — bounded speech cursor
+
+- Speech matching is strictly forward-only.
+- Recognition can search only the next 10 script words.
+- Earliest valid phrase match wins; the algorithm no longer jumps to a later occurrence because it has a higher score.
+- Single-word fallback ignores common Bulgarian stop words and also searches only the next 10 words.
+- The existing smooth centering/highlighting behavior is preserved.
+- Visible build number and cache-busting updated to v5.5.

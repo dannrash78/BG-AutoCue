@@ -299,60 +299,52 @@ function findMatch(spoken){
   const tw=tokenize(spoken);
   if(!sw.length||!tw.length)return {index:-1,score:0,count:0};
 
-  // Search only forward from the current confirmed position. This prevents
-  // the recognizer from jumping back to an earlier phrase.
-  const start=Math.max(0,speechProgressWord-2);
-  const maxAhead=Math.min(sw.length,start+140);
-  const words=tw.slice(-24);
+  // IMPORTANT: never search the whole script. The speech cursor is a
+  // one-way pointer. A recognition error can move it only forward, and only
+  // inside the next 10 script words. This prevents common words such as
+  // "и", "на", "за" from causing a jump to a later paragraph.
+  const base=Math.max(0,speechProgressWord);
+  const limit=Math.min(sw.length,base+10);
+  const spokenWords=tw.slice(-18);
 
+  // First try to align a short consecutive phrase against the next 10 words.
+  // Prefer the EARLIEST valid alignment, not the highest-scoring distant one.
+  // That is the key difference from the previous version.
   let best={index:-1,score:0,count:0,start:-1};
-
-  // Prefer long consecutive phrases. Bulgarian SpeechRecognition often
-  // changes punctuation and occasionally drops/merges a word, so matching
-  // is fuzzy rather than exact.
-  for(let n=Math.min(14,words.length);n>=2;n--){
-    const phrase=words.slice(-n);
-    for(let i=start;i<=maxAhead-n;i++){
+  const maxN=Math.min(8,spokenWords.length);
+  for(let n=maxN;n>=2;n--){
+    const phrase=spokenWords.slice(-n);
+    for(let i=base;i<=Math.min(limit-n,base+9);i++){
       let total=0,hits=0;
       for(let j=0;j<n;j++){
-        const s=sim(sw[i+j],phrase[j]);
-        if(s>=0.58){ total+=s; hits++; }
+        const q=sim(sw[i+j],phrase[j]);
+        if(q>=0.58){hits++;total+=q;}
       }
       const coverage=hits/n;
-      const score=(total/Math.max(1,n))*0.72+coverage*0.28;
-      if(hits>=Math.ceil(n*0.55) && score>=0.63){
-        if(best.index<0 || score>best.score+0.025 ||
-           (Math.abs(score-best.score)<=0.025 && i<best.start)){
-          best={index:i+n,score,count:n,start:i};
-        }
+      const score=(total/Math.max(1,n))*0.75+coverage*0.25;
+      if(hits>=Math.max(2,Math.ceil(n*0.60)) && score>=0.64){
+        best={index:i+n,score,count:n,start:i};
+        // Earliest valid phrase wins. Do not keep searching farther down.
+        break;
       }
     }
-    if(best.index>=0 && best.count>=5 && best.score>=0.78) break;
+    if(best.index>=0)break;
   }
+  if(best.index>=0)return best;
 
-  // Two-word high-confidence continuation.
-  if(best.index<0 && words.length>=2){
-    for(let i=start;i<Math.min(maxAhead-1,sw.length-1);i++){
-      const a=sim(sw[i],words[words.length-2]);
-      const b=sim(sw[i+1],words[words.length-1]);
-      if(a>=0.78 && b>=0.78){
-        return {index:i+2,score:(a+b)/2,count:2};
-      }
+  // Single-word fallback, but only for useful/content words. Search at most
+  // 10 words ahead and take the first sufficiently strong match.
+  const stop=new Set(['и','а','в','във','на','за','с','със','от','до','по','при','че','да','се','си','е','са','ще','не','но','като','която','който','кои','това','тези','този','тази','то','го','ги','му','ми','ме','ви','те','аз','ти','ние','вие','той','тя','те','как','какво','към','или','ако','след','преди','още','само']);
+  for(const w of spokenWords.slice(-5).reverse()){
+    if(stop.has(w)||w.length<4)continue;
+    for(let i=base;i<limit;i++){
+      const q=sim(sw[i],w);
+      if(q>=0.82)return {index:i+1,score:q,count:1,start:i};
     }
   }
 
-  // Single word fallback: deliberately conservative, but it is enough to
-  // keep the cursor moving when the browser emits very short results.
-  if(best.index<0){
-    const w=words[words.length-1];
-    for(let i=start;i<Math.min(start+24,sw.length);i++){
-      const s=sim(sw[i],w);
-      if(s>=0.88) return {index:i+1,score:s,count:1};
-    }
-  }
   return best;
 }
-
 function getWordElement(index){
   return els.cueText.querySelector(`.cue-word[data-word-index="${index}"]`);
 }
