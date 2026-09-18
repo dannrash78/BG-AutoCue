@@ -222,3 +222,16 @@
 - The spoken word remains highlighted while the next word becomes the reading position.
 - Recognition result indexes are tracked per recognition session to prevent the buffer from being processed repeatedly.
 - Visible version and cache-busting updated to v5.6.
+
+
+## v5.7 — word-count fallback
+
+- The persistent cue now advances by the number of newly recognized words.
+- Recognition matching is only a local correction within the next 10 script words.
+- The search never goes backwards and never searches farther than 10 words ahead.
+- Short words (1–3 letters) require exact matching.
+- Four-letter words use a strict threshold.
+- Longer words use controlled fuzzy matching.
+- If a spoken word cannot be matched, the cue advances by one word instead of freezing.
+- The green marker represents the next word to read.
+- The cue moves that next word toward the center/green guide line.

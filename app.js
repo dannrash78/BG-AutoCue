@@ -295,48 +295,44 @@ function sim(a,b){
   return 0;
 }
 function wordMatchScore(scriptWord, spokenWord){
-  if(!scriptWord || !spokenWord) return 0;
-  if(scriptWord === spokenWord) return 1;
+  if(!scriptWord || !spokenWord)return 0;
+  if(scriptWord===spokenWord)return 1;
 
-  // Very short Bulgarian words/syllables are too ambiguous for fuzzy matching.
-  // They must be exact, as requested.
-  if(scriptWord.length <= 3 || spokenWord.length <= 3) return 0;
-
-  if(scriptWord.length === 4 || spokenWord.length === 4){
-    const s=sim(scriptWord,spokenWord);
-    return s>=0.92 ? s : 0;
-  }
+  // Short Bulgarian words/syllables are ambiguous: exact match only.
+  if(scriptWord.length<=3 || spokenWord.length<=3)return 0;
 
   const s=sim(scriptWord,spokenWord);
-  // Long words can tolerate recognition endings/prefixes and small errors.
-  return s>=0.70 ? s : 0;
+  if(scriptWord.length===4 || spokenWord.length===4)
+    return s>=0.90?s:0;
+
+  // Longer words tolerate normal ASR spelling/ending errors.
+  return s>=0.68?s:0;
 }
 
-function findNextWordMatch(spokenWord){
+function findForwardMatch(spokenWord,cursor){
   const sw=tokenize(els.script.value);
-  if(!sw.length || !spokenWord) return {index:-1,score:0};
+  if(!sw.length||!spokenWord)return {index:-1,score:0};
 
-  const base=Math.max(0,speechProgressWord);
+  const base=Math.max(0,cursor);
   const limit=Math.min(sw.length,base+10);
 
-  // Pass 1: exact/very strong matches. Always choose the earliest match.
+  // Exact/very strong match first. Earliest valid match always wins.
   for(let i=base;i<limit;i++){
     const s=wordMatchScore(sw[i],spokenWord);
-    if(s>=0.92) return {index:i,score:s};
+    if(s>=0.90)return {index:i,score:s};
   }
 
-  // Pass 2: long-word fuzzy matching. Still earliest only, never a distant
-  // "best" match. This is what prevents jumps to later paragraphs.
+  // Fuzzy matching is ONLY for longer words, and ONLY inside the next
+  // ten script words.
   for(let i=base;i<limit;i++){
+    if(sw[i].length<5 || spokenWord.length<5)continue;
     const s=wordMatchScore(sw[i],spokenWord);
-    if(s>=0.70 && Math.min(sw[i].length,spokenWord.length)>=5)
-      return {index:i,score:s};
+    if(s>=0.68)return {index:i,score:s};
   }
-
   return {index:-1,score:0};
 }
 
-function scrollWordToGuide(index, smooth=true){
+function scrollWordToGuide(index,smooth=true){
   const target=getWordElement(index);
   if(!target)return false;
 
@@ -355,97 +351,95 @@ function scrollWordToGuide(index, smooth=true){
     return true;
   }
 
-  if(animationFrame) cancelAnimationFrame(animationFrame);
+  if(animationFrame)cancelAnimationFrame(animationFrame);
 
   const distance=Math.abs(targetOffset-startOffset);
-  const duration=smooth
-    ? Math.max(420,Math.min(1100,420+distance*2.0))
-    : 0;
+  const duration=smooth?Math.max(420,Math.min(1100,420+distance*2.0)):0;
 
   if(!duration){
-    offset=targetOffset;
-    render();
-    return true;
+    offset=targetOffset; render(); return true;
   }
 
   const started=performance.now();
-  const ease=t=>t<0.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2;
+  const ease=t=>t<0.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
 
   const animate=now=>{
     const p=Math.min(1,(now-started)/duration);
     offset=startOffset+(targetOffset-startOffset)*ease(p);
     render();
-    if(p<1) animationFrame=requestAnimationFrame(animate);
+    if(p<1)animationFrame=requestAnimationFrame(animate);
     else animationFrame=null;
   };
   animationFrame=requestAnimationFrame(animate);
   return true;
 }
 
-function applySpeechProgress(newProgress, confidence){
+function applySpeechProgress(newProgress,confidence){
   const total=tokenize(els.script.value).length;
-  if(!total || newProgress<=speechProgressWord) return;
+  if(!total||newProgress<=speechProgressWord)return;
 
   speechProgressWord=Math.min(total,newProgress);
 
-  // The last spoken word is green. The next word is the visual reading
-  // cursor, so recognition errors cannot leave the green marker behind.
-  highlightedWord=Math.max(0,Math.min(total-1,speechProgressWord-1));
+  // Green = NEXT word to read. This is intentionally independent from
+  // whether the recognizer managed to highlight the exact spoken word.
+  highlightedWord=Math.min(total-1,speechProgressWord);
   render();
+  scrollWordToGuide(highlightedWord,true);
 
-  const nextWord=Math.min(total-1,speechProgressWord);
-  scrollWordToGuide(nextWord,true);
-
-  log(`Гласово следене: ${speechRecognizedCount} разпознати думи → дума ${speechProgressWord}/${total}.`);
+  log(`Гласово следене: ${speechRecognizedCount} думи → следва дума ${speechProgressWord+1}/${total}.`);
 }
 
 function handleSpeechResult(event){
-  // Keep the transcript visible, but let the field scroll internally.
   let display="";
-  for(let i=0;i<event.results.length;i++){
+  for(let i=0;i<event.results.length;i++)
     display+=(event.results[i][0]?.transcript||"")+" ";
-  }
   els.transcript.textContent=display.trim()||"—";
   els.transcript.scrollTop=els.transcript.scrollHeight;
 
   if(speechMode!=="follow")return;
 
-  let furthest=speechProgressWord;
-  let confidence=0;
+  let moved=false;
+  let strongest=0;
 
-  // Process every NEW final recognition result exactly once. We deliberately
-  // do not depend on resultIndex because Chrome can revise interim results
-  // and resultIndex may point to an item that was already inspected.
+  // Process each final recognition result once. We don't wait for a perfect
+  // match: word count is the fallback that keeps the cue moving.
   for(let i=0;i<event.results.length;i++){
     const result=event.results[i];
-    if(!result.isFinal || speechFinalProcessed.has(i)) continue;
+    if(!result.isFinal||speechFinalProcessed.has(i))continue;
 
     const text=(result[0]?.transcript||"").trim();
     speechFinalProcessed.add(i);
-    if(!text) continue;
+    if(!text)continue;
 
     const words=tokenize(text);
     speechRecognizedCount+=words.length;
 
-    // Each recognized word is compared ONLY against the next ten script
-    // words from the current cursor. Never search backwards.
     for(const spokenWord of words){
-      const match=findNextWordMatch(spokenWord);
-      if(match.index>=speechProgressWord){
-        furthest=match.index+1;
-        confidence=Math.max(confidence,match.score);
-        // Move the local cursor immediately so the following recognized word
-        // continues from the new position rather than the old one.
-        speechProgressWord=furthest;
+      const before=speechProgressWord;
+      const match=findForwardMatch(spokenWord,before);
+
+      if(match.index>=before){
+        // Local correction: never search behind the cursor and never farther
+        // than ten words ahead.
+        speechProgressWord=match.index+1;
+        strongest=Math.max(strongest,match.score);
+      }else{
+        // COUNT FALLBACK:
+        // If recognition clearly heard a word but cannot match it locally,
+        // assume it corresponds to the next script word rather than freezing.
+        speechProgressWord=Math.min(
+          tokenize(els.script.value).length,
+          speechProgressWord+1
+        );
       }
+
+      if(speechProgressWord>before)moved=true;
     }
   }
 
-  // Restore the persistent cursor to the furthest confirmed point and move
-  // the visual cue only ONCE per recognition event, avoiding repeated jumps.
-  if(furthest>0 && furthest>lastMatchedWord){
-    lastMatchedWord=furthest;
-    applySpeechProgress(furthest,confidence||0.70);
+  if(moved){
+    lastMatchedWord=speechProgressWord;
+    applySpeechProgress(speechProgressWord,strongest||0.50);
   }
 }
 
