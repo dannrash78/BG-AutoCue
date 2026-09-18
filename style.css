@@ -311,3 +311,9 @@ body.fullscreen-mode .camera-column .record-row button{min-width:0}
   content:"⌄";
 }
 .cue-word{white-space:normal}
+
+/* v4.7 media-control pause icon */
+.float-controls .record-float{
+  font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+  font-weight:900;
+}

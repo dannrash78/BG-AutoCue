@@ -115,10 +115,10 @@ function render() {
   // Build indexed word spans. This keeps the visual text essentially identical,
   // while allowing speech-following to position the exact next word.
   els.cueText.replaceChildren();
-  const parts = text.split(/(\\s+)/);
+  const parts = text.split(/(\s+)/);
   let wordIndex = 0;
   for (const part of parts) {
-    if (/^\\s+$/.test(part)) {
+    if (/^\s+$/.test(part)) {
       els.cueText.appendChild(document.createTextNode(part));
     } else if (part) {
       const span = document.createElement("span");
@@ -194,12 +194,17 @@ function mime(){
   return types.find(t=>window.MediaRecorder?.isTypeSupported(t))||"";
 }
 function updateRecordButtons(active){
-  els.recordBtn.disabled=active||!stream;
-  // The floating recording button must stay enabled during recording:
-  // recording -> pause -> continue.
+  // Camera-card and floating recording buttons have identical behavior:
+  // ● Record -> ⏸ Pause -> ▶ Continue.
+  els.recordBtn.disabled=!stream;
   els.recordFloat.disabled=!stream;
   els.stopRecordBtn.disabled=!active;
   els.stopFloat.disabled=!active;
+
+  if(!active){
+    els.recordBtn.textContent="⏺ Запис";
+    els.recordFloat.textContent="●";
+  }
 }
 function startRecording(){
   if(!stream||!window.MediaRecorder){log("Първо стартирай камерата.");return;}
@@ -212,16 +217,17 @@ function startRecording(){
   recorder.start(250);
   updateRecordButtons(true);
   els.recordStatus.textContent="● Записва…";
-  els.recordFloat.textContent="Ⅱ";
+  els.recordBtn.textContent="⏸ Пауза";
+  els.recordFloat.textContent="⏸";
   log("Видео записът започна.");
 }
 function toggleRecording(){
   if(!recorder||recorder.state==="inactive"){startRecording();return;}
   if(recorder.state==="recording"){
-    recorder.pause(); els.recordStatus.textContent="Ⅱ Пауза"; els.recordFloat.textContent="▶";
+    recorder.pause(); els.recordStatus.textContent="Ⅱ Пауза"; els.recordBtn.textContent="▶ Продължи"; els.recordFloat.textContent="▶";
     log("Видео записът е на пауза.");
   }else if(recorder.state==="paused"){
-    recorder.resume(); els.recordStatus.textContent="● Записва…"; els.recordFloat.textContent="Ⅱ";
+    recorder.resume(); els.recordStatus.textContent="● Записва…"; els.recordBtn.textContent="⏸ Пауза"; els.recordFloat.textContent="⏸";
     log("Видео записът продължи.");
   }
 }
@@ -238,6 +244,7 @@ function saveRecording(){
   a.href=url;a.download=`bg-autocue-${Date.now()}.${ext}`;document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(url),1500);
   els.recordStatus.textContent="✓ Записът е готов";
+  els.recordBtn.textContent="⏺ Запис";
   els.recordFloat.textContent="●";
   updateRecordButtons(false);
   log("Файлът с видеото е създаден и изтеглянето е стартирано.");
@@ -324,7 +331,7 @@ function findMatch(spoken){
   return -1;
 }
 
-function moveToWord(idx){
+function moveToWord(idx, matchedWordCount=0, matchConfidence=0){
   const total=tokenize(els.script.value).length;
   if(!total)return;
 
@@ -334,15 +341,24 @@ function moveToWord(idx){
 
   const viewportRect=els.viewport.getBoundingClientRect();
   const targetRect=target.getBoundingClientRect();
-
-  // Green line is the reading line. Put the NEXT word at that line.
   const guideY=viewportRect.top + viewportRect.height*0.42;
-  const targetY=targetRect.top + Math.min(targetRect.height*0.55, targetRect.height);
+  const targetY=targetRect.top + targetRect.height*0.55;
 
+  // Normal behavior: put the next word on the green line.
   let delta=guideY-targetY;
 
-  // Do not allow a single recognition result to make a giant jump.
-  const maxStep=Math.max(90, Math.min(180, viewportRect.height*0.20));
+  // When at least two spoken words/lines are matched with >=50% confidence,
+  // guarantee at least about two rendered text lines of forward movement.
+  // This prevents a highly accurate speech result from appearing "stuck".
+  if(matchedWordCount>=2 && matchConfidence>=0.50 && delta < 0){
+    const probe=els.cueText.querySelector(`.cue-word[data-word-index="${Math.max(0,clamped-1)}"]`);
+    const lineHeight=probe ? Math.abs(target.getBoundingClientRect().top-probe.getBoundingClientRect().top) : parseFloat(getComputedStyle(els.cueText).lineHeight);
+    const lh=Math.max(28, Number.isFinite(lineHeight)?lineHeight:48);
+    delta=Math.min(delta, -2*lh);
+  }
+
+  // Keep one recognition result from making a huge leap.
+  const maxStep=Math.max(110, Math.min(240, viewportRect.height*0.28));
   delta=Math.max(-maxStep,Math.min(maxStep,delta));
 
   const max=getMaxOffset();
@@ -375,10 +391,19 @@ function handleSpeechResult(event){
   if(candidate>lastMatchedWord && candidate-lastMatchedWord<=34){
     lastMatchedWord=candidate;
     lastMatchTime=Date.now();
-    // candidate is the first word after the matched spoken phrase.
-    // Place that next word on the green reading line.
-    moveToWord(Math.min(candidate, tokenize(els.script.value).length-1));
-    log(`Гласово следене: съвпадението е около дума ${candidate}; следващата дума е поставена на зелената линия.`);
+
+    const spokenWords=tokenize(freshFinal);
+    const matchedCount=Math.max(2, Math.min(10, spokenWords.length));
+    // The fuzzy matcher has already required strong word matches. For the
+    // "two lines over 50%" rule use a conservative confidence floor.
+    const confidence=spokenWords.length>=2 ? 0.75 : 0;
+
+    moveToWord(
+      Math.min(candidate, tokenize(els.script.value).length-1),
+      matchedCount,
+      confidence
+    );
+    log(`Гласово следене: намерено съвпадение около дума ${candidate}; текстът е преместен към зелената линия.`);
   }
 }
 
@@ -511,7 +536,7 @@ els.handMobile.addEventListener("change",()=>syncHand(els.handMobile.value));
 els.script.addEventListener("input",()=>resetCue());
 els.sampleBtn.addEventListener("click",()=>{els.script.value=SAMPLE;resetCue();log("Дългият примерен текст е зареден.");});
 els.cameraBtn.addEventListener("click",startCamera);
-els.recordBtn.addEventListener("click",startRecording);
+els.recordBtn.addEventListener("click",toggleRecording);
 els.stopRecordBtn.addEventListener("click",stopRecording);
 els.recordFloat.addEventListener("click",toggleRecording);
 els.stopFloat.addEventListener("click",stopRecording);

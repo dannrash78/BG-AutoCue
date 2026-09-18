@@ -120,3 +120,14 @@
 - A single recognition result is capped to a small movement to prevent large jumps.
 - Interim speech does not move the cue; final recognition results do.
 - The newest final speech segment is preferred so old recognized text cannot repeatedly keep the cue stuck.
+
+
+## v4.7 — synchronized recording controls and speech movement
+
+- Camera-card Record and floating Record now use the **same toggle behavior**:
+  `⏺ Запис` → `⏸ Пауза` → `▶ Продължи`.
+- Stop buttons stop the same recording from either location.
+- The pause icon uses the standard media-control `⏸` symbol.
+- Fixed the rendered-word indexing used by speech-following; whitespace is now correctly split into indexed word spans.
+- Speech-following moves the next word toward the green reading line.
+- When a recognition result contains at least two matched words with confidence above 50%, the cue is advanced by at least approximately two rendered text lines (subject to the remaining text).
