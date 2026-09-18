@@ -350,42 +350,62 @@ function moveToWord(idx, matchedWordCount=0, matchConfidence=0){
 
   const clamped=Math.max(0,Math.min(total-1,idx));
   const target=els.cueText.querySelector(`.cue-word[data-word-index="${clamped}"]`);
-  if(!target)return;
+  if(!target){
+    log(`Гласово следене: намерена е дума ${clamped}, но визуалният маркер липсва.`);
+    return;
+  }
 
-  highlightedWord=Math.max(0,clamped-1);
-  render();
-
+  // IMPORTANT: measure the existing DOM BEFORE render(). In the previous
+  // version render() rebuilt the word spans first, leaving `target` detached;
+  // its bounding rect then became 0 and the cue stopped moving.
   const viewportRect=els.viewport.getBoundingClientRect();
   const targetRect=target.getBoundingClientRect();
+
   const guideY=viewportRect.top+viewportRect.height*0.42;
   const targetY=targetRect.top+targetRect.height*0.55;
   let delta=guideY-targetY;
 
-  // The spoken position is authoritative, but a single result can never
-  // move the cue by more than about 1.25 text lines.
   const cs=getComputedStyle(els.cueText);
   const lh=parseFloat(cs.lineHeight);
   const lineHeight=Math.max(28,Number.isFinite(lh)?lh:48);
-  const maxStep=Math.max(42,Math.min(lineHeight*1.25,viewportRect.height*0.16));
-  delta=Math.max(-maxStep,Math.min(maxStep,delta));
+
+  // Normal speech-following: move the matched word smoothly toward the
+  // reading line. If two or more words were matched confidently, allow up
+  // to roughly two lines, but never make a giant jump.
+  const requestedStep = (matchedWordCount>=2 && matchConfidence>=0.50)
+    ? Math.max(delta, -2*lineHeight)
+    : delta;
+
+  const maxStep=Math.max(42,Math.min(2*lineHeight,viewportRect.height*0.22));
+  delta=Math.max(-maxStep,Math.min(maxStep,requestedStep));
+
+  // Highlight the matched word only after measuring the current position.
+  highlightedWord=Math.max(0,clamped-1);
+  render();
 
   const max=getMaxOffset();
   const startOffset=offset;
   const targetOffset=Math.max(-max,Math.min(80,startOffset+delta));
-  if(Math.abs(targetOffset-startOffset)<1)return;
+  if(Math.abs(targetOffset-startOffset)<0.5)return;
 
   if(animationFrame)cancelAnimationFrame(animationFrame);
+
   const distance=Math.abs(targetOffset-startOffset);
-  const duration=Math.max(280,Math.min(650,220+distance*3.2));
+  const duration=Math.max(260,Math.min(560,220+distance*2.5));
   const started=performance.now();
+
   const ease=t=>1-Math.pow(1-t,3);
 
   const animate=now=>{
     const p=Math.min(1,(now-started)/duration);
     offset=startOffset+(targetOffset-startOffset)*ease(p);
+    // Keep the green word visible throughout the animation.
     render();
-    if(p<1)animationFrame=requestAnimationFrame(animate);
-    else animationFrame=null;
+    if(p<1){
+      animationFrame=requestAnimationFrame(animate);
+    }else{
+      animationFrame=null;
+    }
   };
   animationFrame=requestAnimationFrame(animate);
 }

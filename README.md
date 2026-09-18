@@ -160,3 +160,10 @@
 - Matching window is slightly wider for fast speech while remaining strictly forward from the current cue position.
 - The recognized-text console shows only about 10 lines and automatically keeps the newest lines visible.
 - Existing camera, recording, controls, fullscreen and collapsible-section behavior is preserved.
+
+
+## v5.1 — critical cue movement fix
+
+- Fixed the speech-following movement bug caused by measuring a word element after `render()` had already replaced that DOM element.
+- The matched word is now measured first, then highlighted/rendered, and the cue is smoothly animated to the green reading line.
+- Added a diagnostic message if a speech match has no corresponding visual word marker.
