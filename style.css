@@ -15,7 +15,7 @@ main{max-width:1500px;margin:auto;padding:12px}
 .mobile-settings{display:none}
 .primary{background:#e9edf2;color:#101215}.secondary{background:#292e36;color:#fff}.danger{background:#7b2d2d;color:#fff}
 .cue-viewport{position:relative;height:min(72vh,760px);min-height:430px;overflow:hidden;touch-action:none;background:#050607}
-.cue-guide{position:absolute;left:0;right:0;top:42%;height:2px;background:#b8ff4a;opacity:.55;z-index:2;pointer-events:none}
+.cue-guide{position:absolute;left:0;right:0;top:50%;height:2px;background:#b8ff4a;opacity:.55;z-index:2;pointer-events:none}
 .cue-text{position:absolute;left:7%;right:7%;top:0;padding-top:44%;padding-bottom:65%;font-size:42px;line-height:1.45;font-weight:750;white-space:pre-wrap;text-align:center;color:#fff;will-change:transform;transform:translateY(0)}
 .cue-word{display:inline}
 .camera-column{display:flex;flex-direction:column;gap:12px}

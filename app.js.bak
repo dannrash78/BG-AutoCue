@@ -394,16 +394,11 @@ function moveToWord(idx,matchedWordCount=0,matchConfidence=0){
   if(!total)return;
 
   const clamped=Math.max(0,Math.min(total-1,idx));
-
-  // render() rebuilds all .cue-word spans. Therefore the target element must
-  // be queried AFTER render(), otherwise the old DOM node is detached and
-  // getBoundingClientRect() returns zeros. That was the reason speech
-  // highlighting worked while the cue itself did not scroll.
-  highlightedWord=Math.max(0,Math.min(total-1,clamped-1));
-  render();
-
   const target=getWordElement(clamped);
   if(!target)return;
+
+  highlightedWord=Math.max(0,Math.min(total-1,clamped-1));
+  render();
 
   const viewportRect=els.viewport.getBoundingClientRect();
   const targetRect=target.getBoundingClientRect();
@@ -470,7 +465,7 @@ function handleSpeechResult(event){
 
     moveToWord(match.index,match.count,match.score);
 
-    log(`Гласово следене: ${match.count} думи, ${(match.score*100).toFixed(0)}% съвпадение, позиция ${match.index}. Скролът е активиран.`);
+    log(`Гласово следене: ${match.count} думи, ${(match.score*100).toFixed(0)}% съвпадение, позиция ${match.index}.`);
 
     // If recognition has clearly advanced several words, keep the next word
     // as the visual cue even when the recognized phrase ended one word later.

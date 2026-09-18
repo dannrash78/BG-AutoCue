@@ -275,3 +275,10 @@ Compared with the earlier versions, the speech-following core was aligned with t
 - The next word is highlighted after the recognized position.
 - Camera, recording, layout, collapse controls and mobile layout are inherited unchanged from v5.9.
 - Visible version/cache-busting updated to v5.10.
+
+
+## v5.12
+- Fixed the speech-following scroll calculation.
+- The target word is re-queried after `render()` rebuilds the word spans, so its real screen position is measured.
+- The visual guide line is aligned with the 50% center used by the movement calculation.
+- Speech recognition, matching and highlighting logic otherwise remains unchanged from v5.11.
