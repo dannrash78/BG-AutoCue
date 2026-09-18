@@ -372,3 +372,17 @@ body.fullscreen-mode .camera-column .record-row button{min-width:0}
   text-shadow:0 0 7px rgba(72,224,106,.25);
   transition:color .12s ease,text-shadow .12s ease;
 }
+
+
+/* v5.0 — recognized speech console: show only the latest ~10 lines */
+.transcript{
+  max-height:13.5em;
+  min-height:3.2em;
+  overflow-y:hidden;
+  overflow-x:hidden;
+  line-height:1.35em;
+  white-space:pre-wrap;
+  word-break:normal;
+  overflow-wrap:anywhere;
+  scroll-behavior:smooth;
+}

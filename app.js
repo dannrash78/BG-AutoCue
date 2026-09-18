@@ -390,29 +390,33 @@ function moveToWord(idx, matchedWordCount=0, matchConfidence=0){
   animationFrame=requestAnimationFrame(animate);
 }
 function handleSpeechResult(event){
+  // Chrome's continuous SpeechRecognition keeps old results in event.results.
+  // Only results from resultIndex onward are NEW. Processing the whole array
+  // repeatedly was the main reason following could stall after a few phrases.
   let display="";
   for(let i=0;i<event.results.length;i++){
-    const result=event.results[i];
-    display+=(result[0]?.transcript||"")+" ";
+    display+=(event.results[i][0]?.transcript||"")+" ";
   }
   els.transcript.textContent=display.trim()||"—";
+  els.transcript.scrollTop=els.transcript.scrollHeight;
 
   if(speechMode!=="follow")return;
 
-  let newestFinal="";
+  let newestFinal=[];
   const from=Math.max(0,event.resultIndex||0);
   for(let i=from;i<event.results.length;i++){
     const result=event.results[i];
     if(result.isFinal){
-      newestFinal+=" "+(result[0]?.transcript||"");
-      speechResultCursor=i+1;
+      const t=(result[0]?.transcript||"").trim();
+      if(t)newestFinal.push(t);
     }
   }
-  newestFinal=newestFinal.trim();
-  if(!newestFinal)return;
+  const newestFinalText=newestFinal.join(" ").trim();
+  if(!newestFinalText)return;
 
-  finalSpeech=(finalSpeech+" "+newestFinal).trim().slice(-500);
-  const match=findMatch(newestFinal);
+  // Match ONLY the new final phrase. Do not re-feed all previous final
+  // recognition results into the matcher.
+  const match=findMatch(newestFinalText);
 
   if(match.index>lastMatchedWord){
     lastMatchedWord=match.index;
@@ -426,10 +430,10 @@ function handleSpeechResult(event){
 
     log(`Гласово следене: ${match.count} думи, съвпадение ${(match.score*100).toFixed(0)}%, позиция ${match.index}.`);
   }else{
-    // Some Chrome versions may deliver a final result without event.resultIndex
-    // changing as expected. Try the accumulated recent tail once, but still
-    // require a strictly forward match.
-    const fallback=findMatch(finalSpeech);
+    // If a fast speaker produces a longer final chunk, try its last 8 words.
+    // This is still NEW speech, so it cannot repeatedly match an old phrase.
+    const tail=tokenize(newestFinalText).slice(-8).join(" ");
+    const fallback=findMatch(tail);
     if(fallback.index>lastMatchedWord){
       lastMatchedWord=fallback.index;
       lastMatchTime=Date.now();

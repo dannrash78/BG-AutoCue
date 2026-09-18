@@ -151,3 +151,12 @@
 - Old recognized text cannot repeatedly reset the matcher or cause it to stall.
 - Movement is incremental and smoothly animated; a single recognition result is limited to about 1.25 text lines.
 - The currently matched word remains highlighted in green.
+
+
+## v5.0 — continuous speech fix + 10-line recognition console
+
+- Continuous SpeechRecognition now processes only NEW final results using `event.resultIndex`.
+- Previous final results are no longer fed repeatedly into the matcher, preventing the cue from stalling after a phrase such as "лечение".
+- Matching window is slightly wider for fast speech while remaining strictly forward from the current cue position.
+- The recognized-text console shows only about 10 lines and automatically keeps the newest lines visible.
+- Existing camera, recording, controls, fullscreen and collapsible-section behavior is preserved.
