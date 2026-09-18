@@ -131,3 +131,13 @@
 - Fixed the rendered-word indexing used by speech-following; whitespace is now correctly split into indexed word spans.
 - Speech-following moves the next word toward the green reading line.
 - When a recognition result contains at least two matched words with confidence above 50%, the cue is advanced by at least approximately two rendered text lines (subject to the remaining text).
+
+
+## v4.8 — recording button visuals + smooth speech cue
+
+- Camera-card recording controls are fixed-size icon-only buttons.
+- Camera-card recording button uses the same record/pause/continue toggle as the floating control.
+- Stop remains a separate icon-only button.
+- The speech-matched word is highlighted in green.
+- Speech-driven movement is animated smoothly over about half a second.
+- Large jumps are capped per recognition event to reduce loss of reading position.

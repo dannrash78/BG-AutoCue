@@ -20,7 +20,7 @@ const els = {
 let stream = null, recorder = null, chunks = [];
 let offset = 0, autoTimer = null;
 let speech = null, speechMode = "off", speechRunning = false, restartTimer = null;
-let finalSpeech = "", lastMatchedWord = 0, lastMatchTime = 0;
+let finalSpeech = "", lastMatchedWord = 0, lastMatchTime = 0, highlightedWord = -1, animationFrame = null;
 
 const SAMPLE = `Здравейте и благодаря за поканата.
 
@@ -123,8 +123,10 @@ function render() {
     } else if (part) {
       const span = document.createElement("span");
       span.className = "cue-word";
-      span.dataset.wordIndex = String(wordIndex++);
+      span.dataset.wordIndex = String(wordIndex);
+      if(wordIndex===highlightedWord) span.classList.add("speech-highlight");
       span.textContent = part;
+      wordIndex++;
       els.cueText.appendChild(span);
     }
   }
@@ -138,7 +140,12 @@ function moveBy(px){
   offset=Math.max(-max,Math.min(80,offset+px));
   render();
 }
-function resetCue(){ offset=0; lastMatchedWord=0; finalSpeech=""; render(); }
+function resetCue(){
+  offset=0; lastMatchedWord=0; finalSpeech=""; highlightedWord=-1;
+  if(animationFrame) cancelAnimationFrame(animationFrame);
+  animationFrame=null;
+  render();
+}
 
 function startAuto(){
   stopAuto();
@@ -202,7 +209,7 @@ function updateRecordButtons(active){
   els.stopFloat.disabled=!active;
 
   if(!active){
-    els.recordBtn.textContent="⏺ Запис";
+    els.recordBtn.textContent="●";
     els.recordFloat.textContent="●";
   }
 }
@@ -217,17 +224,17 @@ function startRecording(){
   recorder.start(250);
   updateRecordButtons(true);
   els.recordStatus.textContent="● Записва…";
-  els.recordBtn.textContent="⏸ Пауза";
+  els.recordBtn.textContent="⏸";
   els.recordFloat.textContent="⏸";
   log("Видео записът започна.");
 }
 function toggleRecording(){
   if(!recorder||recorder.state==="inactive"){startRecording();return;}
   if(recorder.state==="recording"){
-    recorder.pause(); els.recordStatus.textContent="Ⅱ Пауза"; els.recordBtn.textContent="▶ Продължи"; els.recordFloat.textContent="▶";
+    recorder.pause(); els.recordStatus.textContent="⏸ Пауза"; els.recordBtn.textContent="▶"; els.recordFloat.textContent="▶";
     log("Видео записът е на пауза.");
   }else if(recorder.state==="paused"){
-    recorder.resume(); els.recordStatus.textContent="● Записва…"; els.recordBtn.textContent="⏸ Пауза"; els.recordFloat.textContent="⏸";
+    recorder.resume(); els.recordStatus.textContent="● Записва…"; els.recordBtn.textContent="⏸"; els.recordFloat.textContent="⏸";
     log("Видео записът продължи.");
   }
 }
@@ -244,7 +251,7 @@ function saveRecording(){
   a.href=url;a.download=`bg-autocue-${Date.now()}.${ext}`;document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(url),1500);
   els.recordStatus.textContent="✓ Записът е готов";
-  els.recordBtn.textContent="⏺ Запис";
+  els.recordBtn.textContent="●";
   els.recordFloat.textContent="●";
   updateRecordButtons(false);
   log("Файлът с видеото е създаден и изтеглянето е стартирано.");
@@ -339,31 +346,48 @@ function moveToWord(idx, matchedWordCount=0, matchConfidence=0){
   const target=els.cueText.querySelector(`.cue-word[data-word-index="${clamped}"]`);
   if(!target)return;
 
+  highlightedWord=clamped;
+
   const viewportRect=els.viewport.getBoundingClientRect();
   const targetRect=target.getBoundingClientRect();
   const guideY=viewportRect.top + viewportRect.height*0.42;
   const targetY=targetRect.top + targetRect.height*0.55;
 
-  // Normal behavior: put the next word on the green line.
   let delta=guideY-targetY;
 
-  // When at least two spoken words/lines are matched with >=50% confidence,
-  // guarantee at least about two rendered text lines of forward movement.
-  // This prevents a highly accurate speech result from appearing "stuck".
-  if(matchedWordCount>=2 && matchConfidence>=0.50 && delta < 0){
-    const probe=els.cueText.querySelector(`.cue-word[data-word-index="${Math.max(0,clamped-1)}"]`);
-    const lineHeight=probe ? Math.abs(target.getBoundingClientRect().top-probe.getBoundingClientRect().top) : parseFloat(getComputedStyle(els.cueText).lineHeight);
-    const lh=Math.max(28, Number.isFinite(lineHeight)?lineHeight:48);
-    delta=Math.min(delta, -2*lh);
+  // If at least two spoken words have been matched with >=50% confidence,
+  // move by roughly two text lines, but do it as a smooth animation.
+  if(matchedWordCount>=2 && matchConfidence>=0.50 && delta<0){
+    const prev=els.cueText.querySelector(`.cue-word[data-word-index="${Math.max(0,clamped-1)}"]`);
+    const rawLineHeight=prev ? Math.abs(target.getBoundingClientRect().top-prev.getBoundingClientRect().top) : parseFloat(getComputedStyle(els.cueText).lineHeight);
+    const lineHeight=Math.max(28,Number.isFinite(rawLineHeight)?rawLineHeight:48);
+    delta=Math.min(delta,-2*lineHeight);
   }
 
-  // Keep one recognition result from making a huge leap.
-  const maxStep=Math.max(110, Math.min(240, viewportRect.height*0.28));
+  // Never jump a large distance in one recognition event.
+  const maxStep=Math.max(55,Math.min(125,viewportRect.height*0.14));
   delta=Math.max(-maxStep,Math.min(maxStep,delta));
 
   const max=getMaxOffset();
-  offset=Math.max(-max,Math.min(80,offset+delta));
-  render();
+  const startOffset=offset;
+  const targetOffset=Math.max(-max,Math.min(80,startOffset+delta));
+  if(animationFrame) cancelAnimationFrame(animationFrame);
+
+  const duration=520;
+  const started=performance.now();
+  const ease=t=>{
+    // easeInOutCubic
+    return t<0.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2;
+  };
+
+  const animate=now=>{
+    const p=Math.min(1,(now-started)/duration);
+    offset=startOffset+(targetOffset-startOffset)*ease(p);
+    render();
+    if(p<1) animationFrame=requestAnimationFrame(animate);
+    else animationFrame=null;
+  };
+  animationFrame=requestAnimationFrame(animate);
 }
 function handleSpeechResult(event){
   let display="";
@@ -398,11 +422,11 @@ function handleSpeechResult(event){
     // "two lines over 50%" rule use a conservative confidence floor.
     const confidence=spokenWords.length>=2 ? 0.75 : 0;
 
-    moveToWord(
-      Math.min(candidate, tokenize(els.script.value).length-1),
-      matchedCount,
-      confidence
-    );
+    const nextIndex=Math.min(candidate, tokenize(els.script.value).length-1);
+    const matchedIndex=Math.max(0,nextIndex-1);
+    moveToWord(nextIndex, matchedCount, confidence);
+    highlightedWord=matchedIndex;
+    render();
     log(`Гласово следене: намерено съвпадение около дума ${candidate}; текстът е преместен към зелената линия.`);
   }
 }
