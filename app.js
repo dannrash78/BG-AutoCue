@@ -20,7 +20,7 @@ const els = {
 let stream = null, recorder = null, chunks = [];
 let offset = 0, autoTimer = null;
 let speech = null, speechMode = "off", speechRunning = false, restartTimer = null;
-let finalSpeech = "", lastMatchedWord = 0, speechProgressWord = 0, speechMatchedHistory = "", speechRecognizedCount = 0, speechFinalProcessed = new Set(), lastMatchTime = 0, highlightedWord = -1, animationFrame = null, speechResultCursor = 0;
+let finalSpeech = "", lastMatchedWord = 0, speechProgressWord = 0, speechMatchedHistory = "", speechRecognizedCount = 0, speechFinalProcessed = new Set(), speechFinalSignatures = new Set(), lastMatchTime = 0, highlightedWord = -1, animationFrame = null, speechResultCursor = 0;
 
 const SAMPLE = `Здравейте и благодаря за поканата.
 
@@ -332,6 +332,11 @@ function findForwardMatch(spokenWord,cursor){
   return {index:-1,score:0};
 }
 
+function getWordElement(index){
+  if(!els.cueText)return null;
+  return els.cueText.querySelector(`.cue-word[data-word-index="${index}"]`);
+}
+
 function scrollWordToGuide(index,smooth=true){
   const target=getWordElement(index);
   if(!target)return false;
@@ -405,11 +410,15 @@ function handleSpeechResult(event){
   // match: word count is the fallback that keeps the cue moving.
   for(let i=0;i<event.results.length;i++){
     const result=event.results[i];
-    if(!result.isFinal||speechFinalProcessed.has(i))continue;
+    if(!result.isFinal)continue;
 
     const text=(result[0]?.transcript||"").trim();
-    speechFinalProcessed.add(i);
     if(!text)continue;
+
+    const signature=`${i}|${normalize(text)}`;
+    if(speechFinalSignatures.has(signature))continue;
+    speechFinalProcessed.add(i);
+    speechFinalSignatures.add(signature);
 
     const words=tokenize(text);
     speechRecognizedCount+=words.length;
@@ -439,7 +448,11 @@ function handleSpeechResult(event){
 
   if(moved){
     lastMatchedWord=speechProgressWord;
-    applySpeechProgress(speechProgressWord,strongest||0.50);
+    try{
+      applySpeechProgress(speechProgressWord,strongest||0.50);
+    }catch(err){
+      log("Грешка при преместването на autocue: "+(err.message||err));
+    }
   }
 }
 
@@ -477,6 +490,7 @@ function attachSpeech(r){
   r.onend=()=>{
     speechRunning=false;
     speechFinalProcessed=new Set();
+    speechFinalSignatures=new Set();
     if(speechMode==="off"){ updateSpeechButtons(); return; }
     els.speechStatus.textContent=speechMode==="follow"?"Пауза":"Готово";
     clearTimeout(restartTimer);
@@ -517,6 +531,7 @@ function startSpeech(mode){
     speechMatchedHistory="";
     speechRecognizedCount=0;
     speechFinalProcessed=new Set();
+    speechFinalSignatures=new Set();
     offset=0;
     highlightedWord=-1;
     render();

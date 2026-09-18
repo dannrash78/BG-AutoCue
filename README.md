@@ -235,3 +235,13 @@
 - If a spoken word cannot be matched, the cue advances by one word instead of freezing.
 - The green marker represents the next word to read.
 - The cue moves that next word toward the center/green guide line.
+
+
+## v5.8 — fixed speech-following cursor
+
+- Fixed the critical v5.7 error: `scrollWordToGuide()` called a missing `getWordElement()` function.
+- The exact script word span is now resolved from the indexed `.cue-word` element before positioning.
+- Speech result deduplication now uses transcript signatures, so Chrome can revise a result without an old result index permanently blocking it.
+- Added a safety boundary around visual cue movement so a rendering exception cannot silently stop speech processing.
+- Kept the v5.7 word-count fallback and local 10-word forward matching.
+- Version/cache-busting updated to v5.8.
