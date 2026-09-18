@@ -20,7 +20,7 @@ const els = {
 let stream = null, recorder = null, chunks = [];
 let offset = 0, autoTimer = null;
 let speech = null, speechMode = "off", speechRunning = false, restartTimer = null;
-let finalSpeech = "", lastMatchedWord = 0, lastMatchTime = 0, highlightedWord = -1, animationFrame = null, speechResultCursor = 0;
+let finalSpeech = "", lastMatchedWord = 0, speechProgressWord = 0, speechMatchedHistory = "", lastMatchTime = 0, highlightedWord = -1, animationFrame = null, speechResultCursor = 0;
 
 const SAMPLE = `Здравейте и благодаря за поканата.
 
@@ -464,79 +464,115 @@ function handleSpeechResult(event){
 }
 
 function attachSpeech(r){
-  r.onstart=()=>{speechRunning=true;els.speechStatus.textContent=speechMode==="follow"?"Следи…":"Слуша…";};
+  r.onstart=()=>{
+    speechRunning=true;
+    els.speechStatus.textContent=speechMode==="follow"?"Следи…":"Слуша…";
+    els.speechHint.textContent=speechMode==="follow"
+      ?"Слушам български. Чети текста нормално; курсорът ще следва напред."
+      :"Кажи няколко думи на български.";
+    updateSpeechButtons();
+  };
   r.onresult=handleSpeechResult;
   r.onerror=e=>{
     speechRunning=false;
+    const err=e.error||"unknown";
+    log(`Гласово разпознаване: ${err}.`);
+    if(err==="no-speech" || err==="aborted"){
+      els.speechStatus.textContent=speechMode==="follow"?"Пауза":"Готово";
+      return;
+    }
     els.speechStatus.textContent="Грешка";
     const fatal=["not-allowed","service-not-allowed","language-not-supported","audio-capture"];
-    log(`Гласово разпознаване: ${e.error}.`);
-    if(fatal.includes(e.error)){
+    if(fatal.includes(err)){
       speechMode="off";
+      clearTimeout(restartTimer);
       updateSpeechButtons();
-      if(e.error==="not-allowed") els.speechHint.textContent="Разреши микрофона за сайта и опитай отново.";
-      else if(e.error==="language-not-supported") els.speechHint.textContent="Този браузър не предлага bg-BG SpeechRecognition.";
+      if(err==="not-allowed") els.speechHint.textContent="Разреши микрофона за сайта и натисни отново.";
+      else if(err==="language-not-supported") els.speechHint.textContent="Този браузър не предлага bg-BG SpeechRecognition.";
+      else if(err==="audio-capture") els.speechHint.textContent="Микрофонът е зает или недостъпен. Спри друга програма/запис, после опитай отново.";
       else els.speechHint.textContent="Браузърът не предостави гласовата услуга.";
     }
   };
   r.onend=()=>{
     speechRunning=false;
-    if(speechMode==="off"){updateSpeechButtons();return;}
+    if(speechMode==="off"){ updateSpeechButtons(); return; }
+    els.speechStatus.textContent=speechMode==="follow"?"Пауза":"Готово";
     clearTimeout(restartTimer);
     restartTimer=setTimeout(()=>{
-      if(speechMode!=="off"&&speech&&!speechRunning){
-        try{speech.start();}catch(_){}
+      if(speechMode!=="off" && speech===r && !speechRunning){
+        try{ r.start(); }catch(_){ log("Повторно стартиране на гласовото следене…"); }
       }
-    },500);
+    },350);
   };
 }
+
 function updateSpeechButtons(){
   const active=speechMode!=="off";
-  els.speechTestBtn.disabled=active;els.followBtn.disabled=active;els.speechStopBtn.disabled=!active;
-  if(!active)els.speechStatus.textContent="Готово";
+  els.speechTestBtn.disabled=active;
+  els.followBtn.disabled=active;
+  els.speechStopBtn.disabled=!active;
 }
+
 function startSpeech(mode){
   if(!speechSupported()){
-    log("Този браузър няма SpeechRecognition. Камерата и ръчният autocue работят независимо.");
     els.speechStatus.textContent="Няма поддръжка";
+    els.speechHint.textContent="SpeechRecognition не е наличен в този браузър. Пробвай актуален Chrome/Edge.";
+    log("SpeechRecognition не е наличен.");
     return;
   }
 
-  // Stop any previous recognition cleanly before creating a new session.
   speechMode="off";
   clearTimeout(restartTimer);
   if(speech){try{speech.abort();}catch(_){}}
-  speech=null;
-  speechRunning=false;
+  speech=null; speechRunning=false;
 
   speechMode=mode;
   finalSpeech=""; speechResultCursor=0;
-  if(mode==="follow"){lastMatchedWord=0;speechProgressWord=0;speechMatchedHistory="";offset=0;highlightedWord=-1;render();}
+
+  if(mode==="follow"){
+    lastMatchedWord=0;
+    speechProgressWord=0;
+    speechMatchedHistory="";
+    offset=0;
+    highlightedWord=-1;
+    render();
+  }
 
   speech=newSpeech();
-  if(!speech)return;
+  if(!speech){ speechMode="off"; updateSpeechButtons(); return; }
+
   attachSpeech(speech);
   updateSpeechButtons();
+  els.speechStatus.textContent="Стартира…";
+  els.speechHint.textContent=mode==="follow"
+    ?"Стартирам гласовото следене…"
+    :"Стартирам теста за български…";
 
-  // Start directly inside the button click. This is important on mobile
-  // browsers, where a delayed SpeechRecognition.start() can lose the
-  // user-gesture permission.
+  // Called synchronously from the actual click handler.
   try{
     speech.start();
     log(mode==="follow"
-      ?"Гласовото следене е стартирано. Започни да четеш първото изречение от текста."
+      ?"Гласовото следене е стартирано. Започни от началото на текста."
       :"Тестът за български е стартиран. Кажи няколко думи.");
   }catch(e){
-    els.speechStatus.textContent="Грешка";
-    log("Неуспешен старт на речта: "+e.message);
+    speechMode="off"; speechRunning=false;
     updateSpeechButtons();
+    els.speechStatus.textContent="Грешка";
+    els.speechHint.textContent="Стартът на гласовото разпознаване беше отказан. Натисни отново.";
+    log("Неуспешен старт на речта: "+(e.message||e));
   }
 }
+
 function stopSpeech(){
-  speechMode="off";clearTimeout(restartTimer);
+  speechMode="off";
+  clearTimeout(restartTimer);
   if(speech){try{speech.abort();}catch(_){}}
-  speech=null;speechRunning=false;updateSpeechButtons();
+  speech=null; speechRunning=false;
+  updateSpeechButtons();
+  els.speechStatus.textContent="Готово";
+  els.speechHint.textContent="Гласовото разпознаване е спряно.";
 }
+
 
 function toggleFullscreen(){
   const active=!document.body.classList.contains("fullscreen-mode");
@@ -596,9 +632,9 @@ els.recordBtn.addEventListener("click",toggleRecording);
 els.stopRecordBtn.addEventListener("click",stopRecording);
 els.recordFloat.addEventListener("click",toggleRecording);
 els.stopFloat.addEventListener("click",stopRecording);
-els.speechTestBtn.addEventListener("click",()=>startSpeech("test"));
-els.followBtn.addEventListener("click",()=>startSpeech("follow"));
-els.speechStopBtn.addEventListener("click",stopSpeech);
+els.speechTestBtn.addEventListener("click",e=>{e.stopPropagation();startSpeech("test");});
+els.followBtn.addEventListener("click",e=>{e.stopPropagation();startSpeech("follow");});
+els.speechStopBtn.addEventListener("click",e=>{e.stopPropagation();stopSpeech();});
 els.fullscreenBtn.addEventListener("click",toggleFullscreen);
 
 window.addEventListener("beforeunload",()=>{
@@ -610,6 +646,7 @@ els.fontSizeMobile.value=els.fontSizeDesk.value;
 els.opacityMobile.value=els.opacityDesk.value;
 els.handMobile.value=els.handDesk.value;
 syncHand("right");
+updateSpeechButtons();
 setupCollapsibleSections();
 render();
 if(!speechSupported()){

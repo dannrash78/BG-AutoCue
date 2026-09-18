@@ -187,3 +187,12 @@
 - Matching tolerates missing, merged and slightly misrecognized Bulgarian words.
 - The recognition transcript is visually limited to approximately 10 wrapped lines and scrolls internally.
 - Visible build number and cache-busting remain enabled.
+
+
+## v5.4 — speech button reliability
+
+- Explicit speech state variables.
+- Speech button clicks cannot be swallowed by collapsible-section handlers.
+- Hardened start/error/end lifecycle and automatic restart after normal recognition pauses.
+- Clear microphone and permission diagnostics.
+- Visible version/cache-busting updated to v5.4.
