@@ -258,3 +258,20 @@
 - Restarted SpeechRecognition sessions reset only the transcript-delta baseline, not the cue position.
 - The green marker remains the next word to read and the cue moves it toward the center guide.
 - Version/cache-busting updated to v5.9.
+
+
+## v5.10 — restored proven speech-following engine
+
+Compared with the earlier versions, the speech-following core was aligned with the v4.8 implementation that successfully moved and highlighted the cue:
+
+- Uses `SpeechRecognition.resultIndex`/result list and processes **final** recognition chunks for cursor movement.
+- Interim recognition remains visible but cannot repeatedly rewrite the cursor.
+- Phrase matching is local and sequential.
+- Search window is strictly **10 script words ahead**.
+- Earliest valid alignment wins; a later higher-scoring match cannot cause a jump.
+- Long words tolerate recognition errors; short 1–3 letter words require exact matching.
+- Two-word and useful single-word fallbacks prevent the cue from freezing.
+- Movement is performed by the proven direct DOM word lookup and smooth `moveToWord()` path.
+- The next word is highlighted after the recognized position.
+- Camera, recording, layout, collapse controls and mobile layout are inherited unchanged from v5.9.
+- Visible version/cache-busting updated to v5.10.
