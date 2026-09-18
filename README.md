@@ -141,3 +141,13 @@
 - The speech-matched word is highlighted in green.
 - Speech-driven movement is animated smoothly over about half a second.
 - Large jumps are capped per recognition event to reduce loss of reading position.
+
+
+## v4.9 — sequential speech matching
+
+- Speech recognition now processes only newly finalized recognition results.
+- The cue follows the speech strictly forward from the current position.
+- Matching searches a bounded forward window and prefers the longest strong phrase.
+- Old recognized text cannot repeatedly reset the matcher or cause it to stall.
+- Movement is incremental and smoothly animated; a single recognition result is limited to about 1.25 text lines.
+- The currently matched word remains highlighted in green.

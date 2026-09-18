@@ -364,3 +364,11 @@ body.fullscreen-mode .camera-column .record-row button{min-width:0}
     font-size:23px;
   }
 }
+
+
+/* v4.9 — active speech word */
+.cue-word.speech-highlight{
+  color:#48e06a;
+  text-shadow:0 0 7px rgba(72,224,106,.25);
+  transition:color .12s ease,text-shadow .12s ease;
+}

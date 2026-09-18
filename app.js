@@ -20,7 +20,7 @@ const els = {
 let stream = null, recorder = null, chunks = [];
 let offset = 0, autoTimer = null;
 let speech = null, speechMode = "off", speechRunning = false, restartTimer = null;
-let finalSpeech = "", lastMatchedWord = 0, lastMatchTime = 0, highlightedWord = -1, animationFrame = null;
+let finalSpeech = "", lastMatchedWord = 0, lastMatchTime = 0, highlightedWord = -1, animationFrame = null, speechResultCursor = 0;
 
 const SAMPLE = `Здравейте и благодаря за поканата.
 
@@ -289,55 +289,61 @@ function sim(a,b){
   return 0;
 }
 function findMatch(spoken){
-  const sw = tokenize(els.script.value);
-  const tw = tokenize(spoken);
-  if(!sw.length || !tw.length) return -1;
+  const sw=tokenize(els.script.value);
+  const tw=tokenize(spoken);
+  if(!sw.length||!tw.length)return {index:-1,score:0,count:0};
 
-  /*
-   * IMPORTANT:
-   * Never search hundreds of words ahead. That was the cause of large jumps:
-   * a fuzzy phrase from the first sentence could match a later sentence.
-   * The cue is sequential, so search only a small window immediately ahead.
-   */
-  const recent = tw.slice(-10);
-  const start = Math.max(0, lastMatchedWord - 1);
-  const end = Math.min(sw.length, lastMatchedWord + 32);
+  const start=Math.max(0,lastMatchedWord-1);
+  const maxAhead=Math.min(sw.length,start+90);
+  const words=tw.slice(-18);
 
-  let best = {score:0, index:-1, length:0};
+  let best={index:-1,score:0,count:0,start:-1};
 
-  // Require at least 3 words for a strong phrase match.
-  for(let n=Math.min(7,recent.length); n>=3; n--){
-    const phrase = recent.slice(-n);
-    for(let i=start; i<=end-n; i++){
-      let total=0, hits=0;
+  // Search for the longest strong consecutive phrase first.
+  for(let n=Math.min(12,words.length);n>=2;n--){
+    const phrase=words.slice(-n);
+    for(let i=start;i<=maxAhead-n;i++){
+      let total=0,hits=0;
       for(let j=0;j<n;j++){
         const s=sim(sw[i+j],phrase[j]);
-        if(s>=0.68){ total+=s; hits++; }
+        if(s>=0.62){total+=s;hits++;}
       }
       const coverage=hits/n;
-      const score=(total/Math.max(1,n))*0.72 + coverage*0.28;
-      if(hits>=Math.ceil(n*0.75) && score>best.score){
-        best={score,index:i+n,length:n};
+      const score=(total/Math.max(1,n))*0.70+coverage*0.30;
+      if(hits>=Math.ceil(n*0.60) && score>=0.68){
+        // Prefer an earlier valid continuation when scores are close.
+        if(best.index<0 || score>best.score+0.035 ||
+           (Math.abs(score-best.score)<=0.035 && i<best.start)){
+          best={index:i+n,score,count:n,start:i};
+        }
       }
     }
-    if(best.score>=0.90) break;
+    if(best.index>=0 && best.count>=4 && best.score>=0.82)break;
   }
 
-  /*
-   * A two-word match is accepted only when both words match strongly and
-   * the match is close to the current position. No single-word jumps.
-   */
-  if(best.index>=0 && best.score>=0.74) return best.index;
-
-  if(recent.length>=2){
-    const a=recent[recent.length-2], b=recent[recent.length-1];
-    for(let i=start;i<Math.min(end-1,sw.length-1);i++){
-      if(sim(sw[i],a)>=0.88 && sim(sw[i+1],b)>=0.88) return i+2;
+  // If the recognition engine returned only a short phrase, accept a
+  // high-confidence two-word continuation.
+  if(best.index<0 && words.length>=2){
+    for(let i=start;i<Math.min(maxAhead-1,sw.length-1);i++){
+      const a=sim(sw[i],words[words.length-2]);
+      const b=sim(sw[i+1],words[words.length-1]);
+      if(a>=0.82 && b>=0.82){
+        return {index:i+2,score:(a+b)/2,count:2};
+      }
     }
   }
-  return -1;
-}
 
+  // Single-word fallback: only the immediate next 18 words and very high
+  // similarity. This prevents one ambiguous word from jumping the cue.
+  if(best.index<0){
+    const w=words[words.length-1];
+    for(let i=start;i<Math.min(start+18,sw.length);i++){
+      const s=sim(sw[i],w);
+      if(s>=0.93)return {index:i+1,score:s,count:1};
+    }
+  }
+  return best;
+}
 function moveToWord(idx, matchedWordCount=0, matchConfidence=0){
   const total=tokenize(els.script.value).length;
   if(!total)return;
@@ -346,91 +352,96 @@ function moveToWord(idx, matchedWordCount=0, matchConfidence=0){
   const target=els.cueText.querySelector(`.cue-word[data-word-index="${clamped}"]`);
   if(!target)return;
 
-  highlightedWord=clamped;
+  highlightedWord=Math.max(0,clamped-1);
+  render();
 
   const viewportRect=els.viewport.getBoundingClientRect();
   const targetRect=target.getBoundingClientRect();
-  const guideY=viewportRect.top + viewportRect.height*0.42;
-  const targetY=targetRect.top + targetRect.height*0.55;
-
+  const guideY=viewportRect.top+viewportRect.height*0.42;
+  const targetY=targetRect.top+targetRect.height*0.55;
   let delta=guideY-targetY;
 
-  // If at least two spoken words have been matched with >=50% confidence,
-  // move by roughly two text lines, but do it as a smooth animation.
-  if(matchedWordCount>=2 && matchConfidence>=0.50 && delta<0){
-    const prev=els.cueText.querySelector(`.cue-word[data-word-index="${Math.max(0,clamped-1)}"]`);
-    const rawLineHeight=prev ? Math.abs(target.getBoundingClientRect().top-prev.getBoundingClientRect().top) : parseFloat(getComputedStyle(els.cueText).lineHeight);
-    const lineHeight=Math.max(28,Number.isFinite(rawLineHeight)?rawLineHeight:48);
-    delta=Math.min(delta,-2*lineHeight);
-  }
-
-  // Never jump a large distance in one recognition event.
-  const maxStep=Math.max(55,Math.min(125,viewportRect.height*0.14));
+  // The spoken position is authoritative, but a single result can never
+  // move the cue by more than about 1.25 text lines.
+  const cs=getComputedStyle(els.cueText);
+  const lh=parseFloat(cs.lineHeight);
+  const lineHeight=Math.max(28,Number.isFinite(lh)?lh:48);
+  const maxStep=Math.max(42,Math.min(lineHeight*1.25,viewportRect.height*0.16));
   delta=Math.max(-maxStep,Math.min(maxStep,delta));
 
   const max=getMaxOffset();
   const startOffset=offset;
   const targetOffset=Math.max(-max,Math.min(80,startOffset+delta));
-  if(animationFrame) cancelAnimationFrame(animationFrame);
+  if(Math.abs(targetOffset-startOffset)<1)return;
 
-  const duration=520;
+  if(animationFrame)cancelAnimationFrame(animationFrame);
+  const distance=Math.abs(targetOffset-startOffset);
+  const duration=Math.max(280,Math.min(650,220+distance*3.2));
   const started=performance.now();
-  const ease=t=>{
-    // easeInOutCubic
-    return t<0.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2;
-  };
+  const ease=t=>1-Math.pow(1-t,3);
 
   const animate=now=>{
     const p=Math.min(1,(now-started)/duration);
     offset=startOffset+(targetOffset-startOffset)*ease(p);
     render();
-    if(p<1) animationFrame=requestAnimationFrame(animate);
+    if(p<1)animationFrame=requestAnimationFrame(animate);
     else animationFrame=null;
   };
   animationFrame=requestAnimationFrame(animate);
 }
 function handleSpeechResult(event){
   let display="";
-  let freshFinal="";
-
   for(let i=0;i<event.results.length;i++){
     const result=event.results[i];
-    const t=result[0]?.transcript||"";
-    display+=t+" ";
-    if(result.isFinal) freshFinal+=" "+t;
+    display+=(result[0]?.transcript||"")+" ";
   }
-
   els.transcript.textContent=display.trim()||"—";
-  if(speechMode!=="follow" || !freshFinal.trim()) return;
 
-  // Only final speech advances the cue. Interim speech is displayed but
-  // cannot cause a jump.
-  // Prefer the newest final segment. Keeping a huge accumulated buffer can
-  // repeatedly match old words and make the cue appear stuck.
-  finalSpeech=(finalSpeech+" "+freshFinal).slice(-220);
-  const candidate=findMatch(freshFinal.trim())>=0
-    ? findMatch(freshFinal.trim())
-    : findMatch(finalSpeech);
+  if(speechMode!=="follow")return;
 
-  if(candidate>lastMatchedWord && candidate-lastMatchedWord<=34){
-    lastMatchedWord=candidate;
+  let newestFinal="";
+  const from=Math.max(0,event.resultIndex||0);
+  for(let i=from;i<event.results.length;i++){
+    const result=event.results[i];
+    if(result.isFinal){
+      newestFinal+=" "+(result[0]?.transcript||"");
+      speechResultCursor=i+1;
+    }
+  }
+  newestFinal=newestFinal.trim();
+  if(!newestFinal)return;
+
+  finalSpeech=(finalSpeech+" "+newestFinal).trim().slice(-500);
+  const match=findMatch(newestFinal);
+
+  if(match.index>lastMatchedWord){
+    lastMatchedWord=match.index;
     lastMatchTime=Date.now();
 
-    const spokenWords=tokenize(freshFinal);
-    const matchedCount=Math.max(2, Math.min(10, spokenWords.length));
-    // The fuzzy matcher has already required strong word matches. For the
-    // "two lines over 50%" rule use a conservative confidence floor.
-    const confidence=spokenWords.length>=2 ? 0.75 : 0;
+    moveToWord(
+      Math.min(match.index,tokenize(els.script.value).length-1),
+      match.count,
+      match.score
+    );
 
-    const nextIndex=Math.min(candidate, tokenize(els.script.value).length-1);
-    const matchedIndex=Math.max(0,nextIndex-1);
-    moveToWord(nextIndex, matchedCount, confidence);
-    highlightedWord=matchedIndex;
-    render();
-    log(`Гласово следене: намерено съвпадение около дума ${candidate}; текстът е преместен към зелената линия.`);
+    log(`Гласово следене: ${match.count} думи, съвпадение ${(match.score*100).toFixed(0)}%, позиция ${match.index}.`);
+  }else{
+    // Some Chrome versions may deliver a final result without event.resultIndex
+    // changing as expected. Try the accumulated recent tail once, but still
+    // require a strictly forward match.
+    const fallback=findMatch(finalSpeech);
+    if(fallback.index>lastMatchedWord){
+      lastMatchedWord=fallback.index;
+      lastMatchTime=Date.now();
+      moveToWord(
+        Math.min(fallback.index,tokenize(els.script.value).length-1),
+        fallback.count,
+        fallback.score
+      );
+      log(`Гласово следене: продължено съвпадение ${(fallback.score*100).toFixed(0)}%, позиция ${fallback.index}.`);
+    }
   }
 }
-
 function attachSpeech(r){
   r.onstart=()=>{speechRunning=true;els.speechStatus.textContent=speechMode==="follow"?"Следи…":"Слуша…";};
   r.onresult=handleSpeechResult;
@@ -478,8 +489,8 @@ function startSpeech(mode){
   speechRunning=false;
 
   speechMode=mode;
-  finalSpeech="";
-  if(mode==="follow"){lastMatchedWord=0;offset=0;render();}
+  finalSpeech=""; speechResultCursor=0;
+  if(mode==="follow"){lastMatchedWord=0;offset=0;highlightedWord=-1;render();}
 
   speech=newSpeech();
   if(!speech)return;
