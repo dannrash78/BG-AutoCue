@@ -56,6 +56,26 @@ const SAMPLE = `Здравейте и благодаря за поканата.
 
 Надявам се този разговор да бъде полезен и практичен. Благодаря ви, че отделихте време да го чуете. Нека продължим с ясна информация, спокойствие и внимание към това, което наистина има значение.`;
 
+
+function setupCollapsibleSections(){
+  const cards=document.querySelectorAll(".collapsible-card");
+  cards.forEach(card=>{
+    const title=card.querySelector(".collapse-title");
+    if(!title) return;
+    const toggle=()=>{
+      const collapsed=card.classList.toggle("is-collapsed");
+      title.setAttribute("aria-expanded",String(!collapsed));
+    };
+    title.addEventListener("click",toggle);
+    title.addEventListener("keydown",e=>{
+      if(e.key==="Enter"||e.key===" "){
+        e.preventDefault();
+        toggle();
+      }
+    });
+  });
+}
+
 function log(message) {
   const t = new Date().toLocaleTimeString("bg-BG");
   els.diagnostics.textContent = `[${t}] ${message}`;
@@ -81,7 +101,7 @@ function syncSettings(from) {
   render();
 }
 function syncHand(value) {
-  const side = value || "left";
+  const side = value || "right";
   els.handDesk.value=side; els.handMobile.value=side; els.floatControls.dataset.side=side;
   log(`Контролите за превъртане са преместени ${side==="left"?"вляво":"вдясно"}.`);
 }

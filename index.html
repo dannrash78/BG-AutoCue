@@ -28,13 +28,13 @@
       </label>
       <label class="hand-label">Бутони
         <select id="handMobile">
+          <option value="right" selected>Дясно</option>
           <option value="left">Ляво</option>
-          <option value="right">Дясно</option>
         </select>
       </label>
     </div>
 
-    <div id="floatControls" class="float-controls" data-side="left">
+    <div id="floatControls" class="float-controls" data-side="right">
       <div class="record-row">
         <button id="recordFloat" class="record-float" aria-label="Запис / Пауза / Продължи" title="Запис / Пауза / Продължи" disabled>●</button>
         <button id="stopFloat" class="danger stop-float" aria-label="Стоп запис" title="Стоп запис" disabled>■</button>
@@ -76,8 +76,8 @@
       <div id="recordStatus" class="small-status">Няма запис</div>
     </div>
 
-    <div class="voice-card">
-      <div class="camera-title">
+    <div class="voice-card collapsible-card" data-collapse-key="voice">
+      <div class="camera-title collapse-title" role="button" tabindex="0" aria-expanded="true">
         <span>ГЛАСОВО СЛЕДЕНЕ</span>
         <span id="speechStatus" class="status">Готово</span>
       </div>
@@ -91,8 +91,8 @@
       <div id="speechHint" class="speech-hint">Гласовото разпознаване използва услугата на браузъра.</div>
     </div>
 
-    <div class="settings-card">
-      <div class="camera-title"><span>КОНТРОЛИ</span><span class="status">Настройки</span></div>
+    <div class="settings-card collapsible-card" data-collapse-key="settings">
+      <div class="camera-title collapse-title" role="button" tabindex="0" aria-expanded="true"><span>КОНТРОЛИ</span><span class="status">Настройки</span></div>
       <label class="setting-row">Размер на текста
         <input id="fontSizeDesk" type="range" min="22" max="76" value="42">
       </label>
@@ -104,8 +104,8 @@
       </label>
       <label class="setting-row">Бутони за превъртане
         <select id="handDesk">
+          <option value="right" selected>Отдясно</option>
           <option value="left">Отляво</option>
-          <option value="right">Отдясно</option>
         </select>
       </label>
       <div class="desktop-setting-buttons">
@@ -116,8 +116,8 @@
   </aside>
 </section>
 
-<section class="editor-card">
-  <div class="editor-head">
+<section class="editor-card collapsible-card" data-collapse-key="editor">
+  <div class="editor-head collapse-title" role="button" tabindex="0" aria-expanded="true">
     <h2>Текст за autocue</h2>
     <button id="sampleBtn" class="secondary">Зареди дълъг пример</button>
   </div>
@@ -128,8 +128,8 @@
   </div>
 </section>
 
-<section class="diagnostics-card">
-  <h2>Диагностика</h2>
+<section class="diagnostics-card collapsible-card" data-collapse-key="diagnostics">
+  <h2 class="collapse-title" role="button" tabindex="0" aria-expanded="true">Диагностика</h2>
   <div id="diagnostics">Готово. Стартирай камерата или теста за българска реч.</div>
 </section>
 </main>

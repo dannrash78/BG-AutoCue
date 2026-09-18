@@ -238,3 +238,56 @@ body.fullscreen-mode .camera-column .record-row button{min-width:0}
     font-size:24px;
   }
 }
+
+
+/* v4.5 — visual-only desktop refinements */
+@media(min-width:901px){
+  .camera-actions .record-row{
+    display:flex !important;
+    flex-direction:row !important;
+    flex-wrap:nowrap !important;
+    width:100%;
+    gap:8px;
+  }
+  .camera-actions .record-row button{
+    flex:1 1 0;
+    min-width:0;
+  }
+}
+
+/* Clickable section headings. Camera and floating text controls are intentionally excluded. */
+.collapsible-card .collapse-title{
+  cursor:pointer;
+  user-select:none;
+}
+.collapsible-card .collapse-title::after{
+  content:"⌃";
+  float:right;
+  font-size:14px;
+  opacity:.75;
+  margin-left:8px;
+  transition:transform .18s ease;
+}
+.collapsible-card.is-collapsed .collapse-title::after{
+  content:"⌄";
+}
+.collapsible-card.is-collapsed .collapse-title{
+  margin-bottom:0;
+}
+.collapsible-card.is-collapsed .voice-actions,
+.collapsible-card.is-collapsed .transcript-label,
+.collapsible-card.is-collapsed .transcript,
+.collapsible-card.is-collapsed .speech-hint,
+.collapsible-card.is-collapsed .setting-row,
+.collapsible-card.is-collapsed .desktop-setting-buttons,
+.collapsible-card.is-collapsed .editor-head + #script,
+.collapsible-card.is-collapsed .editor-head + #script + .editor-help,
+.collapsible-card.is-collapsed > #diagnostics{
+  display:none !important;
+}
+.editor-card .collapse-title{
+  justify-content:flex-start;
+}
+.editor-card .collapse-title h2{
+  cursor:pointer;
+}
