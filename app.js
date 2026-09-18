@@ -147,7 +147,7 @@ function moveBy(px){
   els.cueText.style.transform=`translateY(${offset}px)`;
 }
 function resetCue(){
-  offset=0; lastMatchedWord=0; speechProgressWord=0; speechMatchedHistory=""; finalSpeech=""; highlightedWord=-1;
+  offset=0; lastMatchedWord=0; speechProgressWord=0; speechMatchedHistory=""; finalSpeech=""; highlightedWord=-1; speechResultCursor=""; speechFinalSignatures=new Set(); speechRecognizedCount=0;
   if(animationFrame) cancelAnimationFrame(animationFrame);
   animationFrame=null;
   render();
@@ -307,83 +307,72 @@ function wordMatchScore(scriptWord, spokenWord){
 
 function findMatch(spoken){
   const sw=tokenize(els.script.value);
-  const tw=tokenize(spoken);
-  if(!sw.length||!tw.length)return {index:-1,score:0,count:0};
+  const tw=tokenize(spoken).slice(-14);
+  if(!sw.length||!tw.length)return {index:-1,score:0,count:0,matches:[]};
 
-  // Proven v4.8 strategy: compare a short consecutive phrase against the
-  // script, but make the search window strictly 10 words ahead.
-  const base=Math.max(0,speechProgressWord);
+  const base=Math.max(0,Math.min(speechProgressWord,sw.length-1));
   const limit=Math.min(sw.length,base+10);
-  const recent=tw.slice(-10);
-
-  let best={score:0,index:-1,count:0};
-
-  // Prefer longer consecutive phrases. Earliest valid alignment wins.
-  for(let n=Math.min(7,recent.length);n>=3;n--){
-    const phrase=recent.slice(-n);
-
-    for(let i=base;i<=limit-n;i++){
-      let total=0,hits=0;
-
-      for(let j=0;j<n;j++){
-        const s=wordMatchScore(sw[i+j],phrase[j]);
-        if(s>0){
-          total+=s;
-          hits++;
-        }
-      }
-
-      const coverage=hits/n;
-      const score=(total/Math.max(1,n))*0.72+coverage*0.28;
-
-      if(hits>=Math.ceil(n*0.70) && score>=0.64){
-        best={score,index:i+n,count:n};
-        // IMPORTANT: first valid position wins. Never search farther down
-        // simply because a later phrase has a slightly higher score.
-        break;
-      }
-    }
-
-    if(best.index>=0)break;
-  }
-
-  // Two-word fallback for normal speech chunks.
-  if(best.index<0 && recent.length>=2){
-    const a=recent[recent.length-2];
-    const b=recent[recent.length-1];
-
-    for(let i=base;i<Math.min(limit-1,sw.length-1);i++){
-      const sa=wordMatchScore(sw[i],a);
-      const sb=wordMatchScore(sw[i+1],b);
-
-      if(sa>=0.88 && sb>=0.88)
-        return {index:i+2,score:(sa+sb)/2,count:2};
-    }
-  }
-
-  // Single useful-word fallback. Short grammatical words cannot move the cue
-  // by themselves. This prevents "и/на/за/се" from causing false jumps.
   const stop=new Set([
     "и","а","в","във","на","за","с","със","от","до","по","при","че","да",
     "се","си","е","са","ще","не","но","като","която","който","кои","това",
     "тези","този","тази","то","го","ги","му","ми","ме","ви","те","аз","ти",
-    "ние","вие","той","тя","как","какво","към","или","ако","след","преди",
-    "още","само"
+    "ние","вие","той","тя","как","какво","към","или","ако","след","преди","още","само"
   ]);
 
-  for(const spokenWord of recent.slice(-5).reverse()){
-    if(stop.has(spokenWord)||spokenWord.length<4)continue;
+  // Word-by-word forward tracking is deliberately used instead of rigid phrase
+  // matching. SpeechRecognition often returns a mostly-correct sentence with a
+  // few substitutions or omissions. Each recognized word gets one chance to
+  // find the earliest compatible script word within the next 10 words.
+  let cursor=base;
+  const matches=[];
 
-    for(let i=base;i<limit;i++){
-      const s=wordMatchScore(sw[i],spokenWord);
-      if(s>=0.82)
-        return {index:i+1,score:s,count:1};
+  for(const spokenWord of tw){
+    if(cursor>=limit)break;
+    if(stop.has(spokenWord) && spokenWord.length<=3){
+      // A short grammatical word may help continuity only when it is the next
+      // or immediately following script word. Never let it jump across text.
+      const exact=sw[cursor]===spokenWord ? cursor : (sw[cursor+1]===spokenWord ? cursor+1 : -1);
+      if(exact>=0){
+        matches.push({scriptIndex:exact,score:1,spokenWord});
+        cursor=exact+1;
+      }
+      continue;
+    }
+
+    let chosen=-1, chosenScore=0;
+    for(let i=cursor;i<limit;i++){
+      const score=wordMatchScore(sw[i],spokenWord);
+      if(score>0){
+        chosen=i;chosenScore=score;
+        break; // earliest valid match: never jump farther for a nicer score
+      }
+    }
+
+    if(chosen>=0){
+      matches.push({scriptIndex:chosen,score:chosenScore,spokenWord});
+      cursor=chosen+1;
     }
   }
 
-  return best;
-}
+  if(!matches.length)return {index:-1,score:0,count:0,matches:[]};
 
+  const strong=matches.filter(m=>m.score>=0.82);
+  const average=matches.reduce((sum,m)=>sum+m.score,0)/matches.length;
+  const last=matches[matches.length-1];
+
+  // At least one strong content-word match is enough to move. Multiple weaker
+  // matches also count when they form a forward chain.
+  if(strong.length<1 && matches.length<2)
+    return {index:-1,score:average,count:matches.length,matches};
+
+  const confidence=Math.min(1,Math.max(0.50,average));
+  return {
+    index:Math.min(sw.length-1,last.scriptIndex+1),
+    score:confidence,
+    count:matches.length,
+    matches
+  };
+}
 function getWordElement(index){
   if(!els.cueText)return null;
   return els.cueText.querySelector(`.cue-word[data-word-index="${index}"]`);
@@ -391,104 +380,114 @@ function getWordElement(index){
 
 function moveToWord(idx,matchedWordCount=0,matchConfidence=0){
   const total=tokenize(els.script.value).length;
-  if(!total)return;
+  if(!total || !els.viewport || !els.cueText)return;
 
-  const clamped=Math.max(0,Math.min(total-1,idx));
-
-  // Re-render once to apply the new highlight, then measure the NEW live word.
-  // Never rebuild the cue during the animation itself.
-  highlightedWord=Math.max(0,Math.min(total-1,clamped-1));
+  const nextIndex=Math.max(0,Math.min(total-1,idx));
+  highlightedWord=nextIndex;
   render();
 
-  const target=getWordElement(clamped);
+  const target=getWordElement(nextIndex);
   if(!target)return;
 
   const viewportRect=els.viewport.getBoundingClientRect();
   const targetRect=target.getBoundingClientRect();
   const guideY=viewportRect.top+viewportRect.height*0.50;
   const targetY=targetRect.top+targetRect.height*0.50;
+  let delta=guideY-targetY;
 
-  // targetY already includes the current cue transform. Adding the difference
-  // to the current offset places the target on the guide line.
-  const desiredOffset=offset+(guideY-targetY);
-  const max=getMaxOffset();
-  const targetOffset=Math.max(-max,Math.min(80,desiredOffset));
+  // Once the next word drops below the guide, bring it back to the guide.
+  // A tiny dead-zone prevents jitter while staying on the same text line.
+  if(targetRect.top > viewportRect.top+viewportRect.height*0.60){
+    delta=guideY-targetY;
+  }else if(targetRect.bottom < viewportRect.top+viewportRect.height*0.34){
+    delta=guideY-targetY;
+  }else if(Math.abs(delta)<8){
+    return;
+  }
 
-  if(Math.abs(targetOffset-offset)<1){
+  const max=Math.max(0,els.cueText.offsetHeight-els.viewport.clientHeight+els.viewport.clientHeight*0.20);
+  const desired=offset+delta;
+  const targetOffset=Math.max(-max,Math.min(80,desired));
+
+  if(Math.abs(targetOffset-offset)<2){
     offset=targetOffset;
-    els.cueText.style.transform=`translateY(${offset}px)`;
+    els.cueText.style.transform=`translate3d(0,${offset}px,0)`;
     return;
   }
 
   if(animationFrame)cancelAnimationFrame(animationFrame);
-
   const startOffset=offset;
   const distance=targetOffset-startOffset;
-  const maxJump=Math.max(120,Math.min(420,viewportRect.height*0.70));
-  const boundedTarget=startOffset+Math.max(-maxJump,Math.min(maxJump,distance));
-  const duration=Math.max(300,Math.min(850,260+Math.abs(boundedTarget-startOffset)*1.35));
+  const maxJump=Math.max(90,Math.min(360,viewportRect.height*0.65));
+  const bounded=startOffset+Math.max(-maxJump,Math.min(maxJump,distance));
+  const duration=Math.max(300,Math.min(750,280+Math.abs(bounded-startOffset)*1.15));
   const started=performance.now();
   const ease=t=>t<0.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
 
   const animate=now=>{
     const p=Math.min(1,(now-started)/duration);
-    offset=startOffset+(boundedTarget-startOffset)*ease(p);
-    // Only change the transform. Rebuilding the DOM here breaks the measured
-    // target and was the main source of the previous scroll failures.
-    els.cueText.style.transform=`translateY(${offset}px)`;
+    offset=startOffset+(bounded-startOffset)*ease(p);
+    els.cueText.style.transform=`translate3d(0,${offset}px,0)`;
     if(p<1)animationFrame=requestAnimationFrame(animate);
     else animationFrame=null;
   };
   animationFrame=requestAnimationFrame(animate);
 }
-
 function handleSpeechResult(event){
   let display="";
-  let freshFinal="";
-
   for(let i=0;i<event.results.length;i++){
-    const result=event.results[i];
-    const text=result[0]?.transcript||"";
-    display+=text+" ";
-
-    if(result.isFinal){
-      freshFinal+=" "+text;
-    }
+    display+=(event.results[i][0]?.transcript||"")+" ";
   }
-
   els.transcript.textContent=display.trim()||"—";
   els.transcript.scrollTop=els.transcript.scrollHeight;
 
-  if(speechMode!=="follow"||!freshFinal.trim())return;
+  if(speechMode!=="follow"||!event.results.length)return;
 
-  // This is deliberately based on FINAL results, like the version that was
-  // actually moving the cue. Interim results remain visible in diagnostics
-  // but cannot continually rewrite the cursor.
-  const phrase=freshFinal.trim();
-  const match=findMatch(phrase);
+  // Process every recognition result that changed since the previous event.
+  // Final results are kept by the browser; interim results are revised. The
+  // signature filter lets us use both without double-counting identical text.
+  const start=Math.max(0,Number.isInteger(event.resultIndex)?event.resultIndex:event.results.length-1);
+  let latestMatch=null;
+  let latestMatched=[];
 
-  if(match.index>speechProgressWord){
-    const previous=speechProgressWord;
-    speechProgressWord=match.index;
-    lastMatchedWord=speechProgressWord;
-    lastMatchTime=Date.now();
+  for(let i=start;i<event.results.length;i++){
+    const result=event.results[i];
+    const phrase=(result[0]?.transcript||"").trim();
+    if(!phrase)continue;
 
-    moveToWord(match.index,match.count,match.score);
+    const signature=`${i}|${result.isFinal?1:0}|${phrase}`;
+    if(result.isFinal){
+      if(speechFinalSignatures.has(signature))continue;
+      speechFinalSignatures.add(signature);
+    }else{
+      if(speechResultCursor===signature)continue;
+      speechResultCursor=signature;
+    }
 
-    log(`Гласово следене: ${match.count} думи, ${(match.score*100).toFixed(0)}% съвпадение, позиция ${match.index}. Скролът е активиран.`);
+    const match=findMatch(phrase);
+    if(match.index>speechProgressWord){
+      speechProgressWord=match.index;
+      lastMatchedWord=match.index;
+      lastMatchTime=Date.now();
+      speechRecognizedCount+=match.count;
+      latestMatch=match;
+      latestMatched=match.matches||[];
+    }
 
-    // If recognition has clearly advanced several words, keep the next word
-    // as the visual cue even when the recognized phrase ended one word later.
-    if(speechProgressWord>previous){
-      highlightedWord=Math.min(
-        tokenize(els.script.value).length-1,
-        speechProgressWord
-      );
-      render();
+    if(result.isFinal){
+      // Keep only a short finalized history for diagnostics/context. Matching
+      // itself intentionally uses the current changed segment so old speech
+      // cannot interfere with the forward cursor.
+      speechMatchedHistory=tokenize((speechMatchedHistory+" "+phrase)).slice(-14).join(" ");
     }
   }
-}
 
+  if(latestMatch && latestMatch.index>0){
+    moveToWord(latestMatch.index,latestMatch.count,latestMatch.score);
+    const trail=latestMatched.slice(-6).map(m=>`${m.spokenWord}→${m.scriptIndex+1}`).join(", ");
+    log(`Следене: ${trail}; +${latestMatch.count} съвп.; ${(latestMatch.score*100).toFixed(0)}%; курсор ${latestMatch.index}/${tokenize(els.script.value).length}.`);
+  }
+}
 function attachSpeech(r){
   r.onstart=()=>{
     speechRunning=true;
@@ -620,6 +619,7 @@ function startSpeech(mode){
     speechRecognizedCount=0;
     speechFinalProcessed=new Set();
     speechFinalSignatures=new Set();
+    speechResultCursor="";
     offset=0;
     highlightedWord=-1;
     render();

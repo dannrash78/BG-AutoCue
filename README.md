@@ -299,3 +299,15 @@ Compared with the earlier versions, the speech-following core was aligned with t
 - Fixed the v5.13 initialization-breaking `ReferenceError: startCamera is not defined`; because initialization stopped there, later speech-button event listeners were never registered.
 - Updated the visible version and JavaScript cache-buster to v5.14.
 - Speech-following scroll now renders once for highlighting, then animates only `translateY`, without rebuilding the cue on every animation frame.
+
+
+## v5.15 — speech-following alignment repair
+- Replaced rigid same-index phrase matching with monotonic local alignment inside a strict 10-word forward window.
+- Processes the changed SpeechRecognition result instead of rebuilding matches from all old final results on every event.
+- Uses interim results for responsive movement while preserving a one-way cursor.
+- Keeps short grammatical words from causing standalone false jumps.
+- Scroll animation changes only `translate3d` during animation; the cue DOM is not rebuilt frame-by-frame.
+- Added compact diagnostics showing matched words, confidence and cursor position.
+
+- Uses up to three SpeechRecognition alternatives when the browser provides them, choosing the strongest forward alignment.
+- More tolerant long-word matching reduces misses from small Bulgarian word-form/recognition differences while the 10-word search window prevents large jumps.
